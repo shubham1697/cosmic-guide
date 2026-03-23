@@ -1,0 +1,19 @@
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+
+# Local environment and runtime artifacts
+.env
+.server.pid
+*.pid
+
+# Backend local state
+backend/__pycache__/
+backend/venv/
+backend/*.db
