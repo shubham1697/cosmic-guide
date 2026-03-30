@@ -99,19 +99,29 @@ DEFAULT_HOROSCOPE = {
     "overall_score": 75, "lucky_number": "9", "lucky_color": "Purple", "mood": "Intuitive",
 }
 
+# In-memory cache: { (zodiac_sign, "YYYY-MM-DD"): dict }
+# Ensures all requests in the same process return the same daily result.
+_horoscope_cache: dict = {}
+
 
 def get_horoscope(zodiac_sign: str, db=None) -> dict:
     """
     Get today's horoscope for a zodiac sign.
 
     Resolution order:
-    1. Today's cached row in the database (if db session provided).
-    2. AI-generated content (if OPENAI_API_KEY is configured).
-    3. Static template fallback.
+    1. In-memory process cache (same result for all requests today).
+    2. Today's cached row in the database (if db session provided).
+    3. AI-generated content (if GEMINI_API_KEY is configured).
+    4. Static template fallback.
     """
     from datetime import date as _date
     today = _date.today()
     today_str = today.isoformat()
+
+    # ── 1. In-memory cache ───────────────────────────────────────────────────
+    cache_key = (zodiac_sign, today_str)
+    if cache_key in _horoscope_cache:
+        return _horoscope_cache[cache_key]
 
     # ── 1. DB cache ──────────────────────────────────────────────────────────
     if db is not None:
@@ -123,7 +133,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                 .first()
             )
             if cached:
-                return {
+                result = {
                     "sign": zodiac_sign,
                     "date": today_str,
                     "general": cached.general,
@@ -135,10 +145,12 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                     "lucky_color": cached.lucky_color,
                     "mood": cached.mood,
                 }
+                _horoscope_cache[cache_key] = result
+                return result
         except Exception:
             pass  # DB unavailable — continue to AI / static
 
-    # ── 2. AI generation ─────────────────────────────────────────────────────
+    # ── 3. AI generation ─────────────────────────────────────────────────────
     try:
         from services.ai_service import generate_daily_horoscope
         ai_data = generate_daily_horoscope(zodiac_sign, today)
@@ -163,17 +175,19 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                     db.commit()
                 except Exception:
                     db.rollback()
-            return {
+            result = {
                 "sign": zodiac_sign,
                 "date": today_str,
                 **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
             }
+            _horoscope_cache[cache_key] = result
+            return result
     except Exception:
         pass  # AI unavailable — fall through to static
 
-    # ── 3. Static fallback ───────────────────────────────────────────────────
+    # ── 4. Static fallback ───────────────────────────────────────────────────
     data = HOROSCOPE_DATA.get(zodiac_sign, DEFAULT_HOROSCOPE)
-    return {
+    result = {
         "sign": zodiac_sign,
         "date": today_str,
         "general": data["general"],
@@ -185,3 +199,5 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
         "lucky_color": data["lucky_color"],
         "mood": data["mood"],
     }
+    _horoscope_cache[cache_key] = result
+    return result

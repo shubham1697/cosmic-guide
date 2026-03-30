@@ -11,6 +11,7 @@ import 'story_detail_screen.dart';
 class HomeScreen extends StatefulWidget {
   final String userName;
   final String userSign;
+  final HoroscopeData? initialHoroscope;
   final VoidCallback onHoroscopeTap;
   final VoidCallback onTarotTap;
   final VoidCallback onFortuneTap;
@@ -21,6 +22,7 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.userName,
     required this.userSign,
+    this.initialHoroscope,
     required this.onHoroscopeTap,
     required this.onTarotTap,
     required this.onFortuneTap,
@@ -37,13 +39,27 @@ class _HomeScreenState extends State<HomeScreen> {
   List<AstrologyStory> _stories = MockData.stories;
   TarotCard? _dailyTarotCard;
   bool _dailyTarotReversed = false;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _horoscope = MockData.getHoroscope(widget.userSign);
+    _horoscope = widget.initialHoroscope ?? MockData.getHoroscope(widget.userSign);
+    _isLoading = widget.initialHoroscope == null;
     _loadData();
     _loadDailyTarot();
+  }
+
+  @override
+  void didUpdateWidget(HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialHoroscope != null &&
+        widget.initialHoroscope != oldWidget.initialHoroscope) {
+      setState(() {
+        _horoscope = widget.initialHoroscope!;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadDailyTarot() async {
@@ -83,6 +99,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
+    // Only show loading state if we don't already have data from parent
+    if (widget.initialHoroscope == null && mounted) {
+      setState(() => _isLoading = true);
+    }
     final results = await Future.wait([
       ApiService.getHoroscope(widget.userSign),
       ApiService.getStories(),
@@ -91,6 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _horoscope = results[0] as HoroscopeData;
         _stories = results[1] as List<AstrologyStory>;
+        _isLoading = false;
       });
     }
   }
@@ -178,8 +199,11 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           gradient: AppColors.gradientCard,
+          // Subtle pulsing border while live data is loading
+          border: _isLoading
+              ? Border.all(color: AppColors.accent.withAlpha(80))
+              : Border.all(color: AppColors.accent.withAlpha(51)),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.accent.withAlpha(51)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -201,24 +225,34 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.gradientGold,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${horoscope.overallScore}%',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                if (_isLoading)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.accent,
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.gradientGold,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${horoscope.overallScore}%',
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
             const SizedBox(height: 12),
@@ -254,7 +288,10 @@ class _HomeScreenState extends State<HomeScreen> {
   List<String> _splitHoroscopeLines(String text) {
     final normalized = text.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (normalized.isEmpty) {
-      return const ['The stars are aligning for you today.', 'Trust your intuition and move with confidence.'];
+      return const [
+        'The stars are aligning for you today.',
+        'Trust your intuition and move with confidence.',
+      ];
     }
 
     final sentenceParts = normalized
@@ -274,7 +311,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final splitIndex = (words.length / 2).ceil();
     final firstLine = words.sublist(0, splitIndex).join(' ').trim();
     final secondLine = words.sublist(splitIndex).join(' ').trim();
-    return [firstLine, secondLine.isEmpty ? 'Your natural leadership will shine.' : secondLine];
+    return [
+      firstLine,
+      secondLine.isEmpty ? 'Your natural leadership will shine.' : secondLine,
+    ];
   }
 
   Widget _buildHighlightedLine(String line, {bool addSparkle = false}) {
@@ -319,7 +359,9 @@ class _HomeScreenState extends State<HomeScreen> {
       if (word.isEmpty) continue;
       final cleaned = word.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '');
       final isKeyword = keywords.contains(cleaned);
-      spans.add(TextSpan(text: '$word ', style: isKeyword ? highlightStyle : baseStyle));
+      spans.add(
+        TextSpan(text: '$word ', style: isKeyword ? highlightStyle : baseStyle),
+      );
     }
 
     if (addSparkle) {
@@ -810,9 +852,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 16),
         Row(
           children: actions.map((action) {
-            return Expanded(
-              child: _QuickActionTile(action: action),
-            );
+            return Expanded(child: _QuickActionTile(action: action));
           }).toList(),
         ),
       ],
@@ -823,7 +863,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Trending Today 🔥', style: Theme.of(context).textTheme.titleLarge),
+        Text(
+          'Trending Today 🔥',
+          style: Theme.of(context).textTheme.titleLarge,
+        ),
         const SizedBox(height: 16),
         ..._stories.take(3).map((story) => _buildStoryCard(context, story)),
       ],

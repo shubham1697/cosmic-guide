@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
+import 'models/zodiac.dart';
+import 'services/api_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/horoscope_screen.dart';
 import 'screens/tarot_screen.dart';
@@ -96,6 +98,18 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  HoroscopeData? _sharedHoroscope;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchSharedHoroscope();
+  }
+
+  Future<void> _fetchSharedHoroscope() async {
+    final data = await ApiService.getHoroscope(widget.userSign);
+    if (mounted) setState(() => _sharedHoroscope = data);
+  }
 
   void _navigateToTab(int index) {
     setState(() => _currentIndex = index);
@@ -107,6 +121,7 @@ class _MainShellState extends State<MainShell> {
       HomeScreen(
         userName: widget.userName,
         userSign: widget.userSign,
+        initialHoroscope: _sharedHoroscope,
         onHoroscopeTap: () => _navigateToTab(1),
         onTarotTap: () => _pushScreen(context, const TarotScreen()),
         onFortuneTap: () =>
@@ -115,7 +130,10 @@ class _MainShellState extends State<MainShell> {
             _pushScreen(context, const CompatibilityScreen()),
         onKundliTap: () => _pushScreen(context, const KundliScreen()),
       ),
-      HoroscopeScreen(userSign: widget.userSign),
+      HoroscopeScreen(
+        userSign: widget.userSign,
+        initialHoroscope: _sharedHoroscope,
+      ),
       const TarotScreen(),
       const CompatibilityScreen(),
       ProfileScreen(userSign: widget.userSign, userName: widget.userName),

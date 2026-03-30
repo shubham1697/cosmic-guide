@@ -8,7 +8,8 @@ import '../widgets/starry_background.dart';
 
 class HoroscopeScreen extends StatefulWidget {
   final String userSign;
-  const HoroscopeScreen({super.key, required this.userSign});
+  final HoroscopeData? initialHoroscope;
+  const HoroscopeScreen({super.key, required this.userSign, this.initialHoroscope});
 
   @override
   State<HoroscopeScreen> createState() => _HoroscopeScreenState();
@@ -18,19 +19,41 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late HoroscopeData horoscope;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
-    horoscope = MockData.getHoroscope(widget.userSign);
-    _loadHoroscope();
+    if (widget.initialHoroscope != null) {
+      horoscope = widget.initialHoroscope!;
+      _isLoading = false;
+    } else {
+      horoscope = MockData.getHoroscope(widget.userSign);
+      _loadHoroscope();
+    }
+  }
+
+  @override
+  void didUpdateWidget(HoroscopeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialHoroscope != null &&
+        widget.initialHoroscope != oldWidget.initialHoroscope) {
+      setState(() {
+        horoscope = widget.initialHoroscope!;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadHoroscope() async {
+    if (mounted) setState(() => _isLoading = true);
     final data = await ApiService.getHoroscope(widget.userSign);
     if (mounted) {
-      setState(() => horoscope = data);
+      setState(() {
+        horoscope = data;
+        _isLoading = false;
+      });
     }
   }
 
@@ -52,6 +75,19 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
         appBar: AppBar(
           title: Text('Daily Horoscope', style: GoogleFonts.playfairDisplay()),
           backgroundColor: Colors.transparent,
+          actions: [
+            if (_isLoading)
+              const Padding(
+                padding: EdgeInsets.only(right: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+          ],
         ),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
