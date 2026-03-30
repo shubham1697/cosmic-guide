@@ -97,12 +97,19 @@ Once your live URL is deployed, update the mobile app:
 
 Change:
 ```dart
-const String baseUrl = 'http://localhost:8000/api/v1';
+static String get _baseUrl {
+  if (Platform.isAndroid) {
+    return 'http://10.0.2.2:8000/api/v1';
+  }
+  return 'http://localhost:8000/api/v1';
+}
 ```
 
 To:
 ```dart
-const String baseUrl = 'https://cosmicguide-api.onrender.com/api/v1';
+static String get _baseUrl {
+  return 'https://cosmicguide-api.onrender.com/api/v1';
+}
 ```
 
 Rebuild the app and test! 🎉
