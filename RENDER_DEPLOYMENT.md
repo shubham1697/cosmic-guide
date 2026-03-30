@@ -32,12 +32,15 @@ Fill in these values:
 |-------|-------|
 | **Name** | `cosmicguide-api` |
 | **Environment** | `Python 3` |
+| **Python Version** | `3.12.3` |
 | **Region** | `Singapore` (or closest to you) |
 | **Branch** | `master` |
 | **Build Command** | `pip install -r backend/requirements.txt` |
 | **Start Command** | `cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT` |
 
 **Important:** Make sure **Build Command** points to `backend/requirements.txt`
+
+If Render selects Python 3.14 by default, set the Python version to 3.12.3 to avoid `pydantic-core` Rust build errors.
 
 ### Environment Variables:
 
@@ -131,6 +134,14 @@ pip install -r backend/requirements.txt
 1. Check if requirements.txt is missing packages
 2. Go to **Logs** tab in Render dashboard to see full error
 3. Likely need to add the missing package and redeploy
+
+### Build fails at `pydantic-core` / `maturin` / Rust
+This usually means Render is using Python 3.14 and trying to compile from source.
+
+Fix:
+1. In Render service settings, set Python version to `3.12.3`
+2. Ensure the repo has `runtime.txt` with `python-3.12.3`
+3. Click **Manual Deploy** -> **Deploy latest commit**
 
 ### "Application startup failed"
 1. Check main.py syntax (save file in VS Code = format check)
