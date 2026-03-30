@@ -149,6 +149,8 @@ Fix:
 1. In Render service settings, set Python version to `3.12.3`
 2. Ensure the repo has `runtime.txt` with `python-3.12.3`
 3. Click **Manual Deploy** -> **Deploy latest commit**
+4. If logs still show `/python3.14`, use **Clear build cache & deploy**
+5. If still stuck on 3.14, delete and recreate the service from the latest repo commit
 
 ### "Application startup failed"
 1. Check main.py syntax (save file in VS Code = format check)
