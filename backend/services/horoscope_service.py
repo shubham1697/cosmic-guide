@@ -100,13 +100,82 @@ DEFAULT_HOROSCOPE = {
 }
 
 
-def get_horoscope(zodiac_sign: str) -> dict:
-    """Get horoscope data for a zodiac sign (uses pre-written data or defaults)."""
-    today = date.today().isoformat()
+def get_horoscope(zodiac_sign: str, db=None) -> dict:
+    """
+    Get today's horoscope for a zodiac sign.
+
+    Resolution order:
+    1. Today's cached row in the database (if db session provided).
+    2. AI-generated content (if OPENAI_API_KEY is configured).
+    3. Static template fallback.
+    """
+    from datetime import date as _date
+    today = _date.today()
+    today_str = today.isoformat()
+
+    # ── 1. DB cache ──────────────────────────────────────────────────────────
+    if db is not None:
+        try:
+            from db.models import Horoscope
+            cached = (
+                db.query(Horoscope)
+                .filter(Horoscope.zodiac_sign == zodiac_sign, Horoscope.date == today_str)
+                .first()
+            )
+            if cached:
+                return {
+                    "sign": zodiac_sign,
+                    "date": today_str,
+                    "general": cached.general,
+                    "love": cached.love,
+                    "career": cached.career,
+                    "health": cached.health,
+                    "overall_score": cached.overall_score,
+                    "lucky_number": cached.lucky_number,
+                    "lucky_color": cached.lucky_color,
+                    "mood": cached.mood,
+                }
+        except Exception:
+            pass  # DB unavailable — continue to AI / static
+
+    # ── 2. AI generation ─────────────────────────────────────────────────────
+    try:
+        from services.ai_service import generate_daily_horoscope
+        ai_data = generate_daily_horoscope(zodiac_sign, today)
+        if ai_data:
+            # Persist in DB for subsequent requests today
+            if db is not None:
+                try:
+                    from db.models import Horoscope
+                    row = Horoscope(
+                        date=today_str,
+                        zodiac_sign=zodiac_sign,
+                        general=ai_data["general"],
+                        love=ai_data["love"],
+                        career=ai_data["career"],
+                        health=ai_data["health"],
+                        overall_score=ai_data["overall_score"],
+                        lucky_number=ai_data["lucky_number"],
+                        lucky_color=ai_data["lucky_color"],
+                        mood=ai_data["mood"],
+                    )
+                    db.add(row)
+                    db.commit()
+                except Exception:
+                    db.rollback()
+            return {
+                "sign": zodiac_sign,
+                "date": today_str,
+                **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
+            }
+    except Exception:
+        pass  # AI unavailable — fall through to static
+
+    # ── 3. Static fallback ───────────────────────────────────────────────────
     data = HOROSCOPE_DATA.get(zodiac_sign, DEFAULT_HOROSCOPE)
     return {
         "sign": zodiac_sign,
-        "date": today,
+        "date": today_str,
         "general": data["general"],
         "love": data["love"],
         "career": data["career"],

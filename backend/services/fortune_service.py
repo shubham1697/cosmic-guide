@@ -43,6 +43,19 @@ FORTUNE_TEMPLATES = {
 
 
 def generate_fortune(zodiac_sign: str, topic: str, mood: str) -> str:
-    """Generate a fortune based on zodiac sign, topic, and mood."""
+    """
+    Generate a fortune for the given sign, topic, and mood.
+
+    Tries AI generation first; falls back to a static template on failure.
+    """
+    try:
+        from services.ai_service import generate_fortune as ai_fortune
+        result = ai_fortune(zodiac_sign, topic, mood)
+        if result:
+            return result
+    except Exception:
+        pass
+
+    # Static fallback
     fortunes = FORTUNE_TEMPLATES.get(topic, FORTUNE_TEMPLATES["Spiritual"])
     return random.choice(fortunes)
