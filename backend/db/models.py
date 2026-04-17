@@ -86,6 +86,18 @@ class Story(Base):
     is_featured = Column(Boolean, default=False)
 
 
+class FortunePool(Base):
+    """Pre-generated daily fortune pool — 3 fortunes per sign × topic, refreshed daily."""
+    __tablename__ = "fortune_pool"
+
+    id = Column(Integer, primary_key=True, index=True)
+    date = Column(String(10), index=True)          # YYYY-MM-DD
+    zodiac_sign = Column(String(20), index=True)
+    topic = Column(String(50), index=True)          # Love|Career|Health|Wealth|Spiritual
+    fortunes = Column(JSON, nullable=False)          # list of 3 fortune strings
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class KundliReport(Base):
     __tablename__ = "kundli_reports"
 

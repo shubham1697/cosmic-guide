@@ -2,6 +2,10 @@
 
 from datetime import date
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 # Pre-written horoscope templates per sign
 HOROSCOPE_DATA = {
     "Aries": {
@@ -118,12 +122,15 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
     today = _date.today()
     today_str = today.isoformat()
 
+    logger.debug("get_horoscope  sign=%s  date=%s", zodiac_sign, today_str)
+
     # ── 1. In-memory cache ───────────────────────────────────────────────────
     cache_key = (zodiac_sign, today_str)
     if cache_key in _horoscope_cache:
+        logger.debug("get_horoscope  CACHE HIT (memory)  sign=%s", zodiac_sign)
         return _horoscope_cache[cache_key]
 
-    # ── 1. DB cache ──────────────────────────────────────────────────────────
+    # ── 2. DB cache ──────────────────────────────────────────────────────────
     if db is not None:
         try:
             from db.models import Horoscope
@@ -133,6 +140,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                 .first()
             )
             if cached:
+                logger.info("get_horoscope  DB HIT  sign=%s", zodiac_sign)
                 result = {
                     "sign": zodiac_sign,
                     "date": today_str,
@@ -147,14 +155,21 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                 }
                 _horoscope_cache[cache_key] = result
                 return result
-        except Exception:
-            pass  # DB unavailable — continue to AI / static
+            else:
+                logger.debug("get_horoscope  DB MISS  sign=%s", zodiac_sign)
+        except Exception as exc:
+            logger.warning("get_horoscope  DB query failed (%s) \u2014 skipping to AI", exc)
 
     # ── 3. AI generation ─────────────────────────────────────────────────────
     try:
         from services.ai_service import generate_daily_horoscope
+        logger.debug("get_horoscope  calling AI  sign=%s", zodiac_sign)
         ai_data = generate_daily_horoscope(zodiac_sign, today)
         if ai_data:
+            logger.info(
+                "get_horoscope  AI OK  sign=%s  score=%d  mood=%s",
+                zodiac_sign, ai_data["overall_score"], ai_data["mood"],
+            )
             # Persist in DB for subsequent requests today
             if db is not None:
                 try:
@@ -173,7 +188,9 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                     )
                     db.add(row)
                     db.commit()
-                except Exception:
+                    logger.debug("get_horoscope  persisted to DB  sign=%s", zodiac_sign)
+                except Exception as exc:
+                    logger.warning("get_horoscope  DB persist failed (%s)", exc)
                     db.rollback()
             result = {
                 "sign": zodiac_sign,
@@ -182,10 +199,13 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
             }
             _horoscope_cache[cache_key] = result
             return result
-    except Exception:
-        pass  # AI unavailable — fall through to static
+        else:
+            logger.warning("get_horoscope  AI returned None  sign=%s", zodiac_sign)
+    except Exception as exc:
+        logger.warning("get_horoscope  AI exception (%s)  sign=%s \u2014 falling back to static", exc, zodiac_sign)
 
     # ── 4. Static fallback ───────────────────────────────────────────────────
+    logger.warning("get_horoscope  STATIC FALLBACK  sign=%s", zodiac_sign)
     data = HOROSCOPE_DATA.get(zodiac_sign, DEFAULT_HOROSCOPE)
     result = {
         "sign": zodiac_sign,

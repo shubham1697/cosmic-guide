@@ -20,5 +20,9 @@ class Settings:
 
     CORS_ORIGINS: list = ["*"]
 
+    # Logging — set LOG_LEVEL env var on Render to control verbosity
+    # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
+
 
 settings = Settings()

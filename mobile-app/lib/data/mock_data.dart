@@ -814,6 +814,7 @@ class MockData {
     ),
   ];
 
+
   static HoroscopeData getHoroscope(String sign) {
     final horoscopes = {
       'Aries': const HoroscopeData(

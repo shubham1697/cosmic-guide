@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from schemas import StoryResponse, StoryListResponse
+from db.database import get_db
 
 router = APIRouter(prefix="/stories", tags=["Stories"])
 
@@ -109,18 +110,51 @@ def list_stories(
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=50),
     category: str = Query(None, description="Filter by category"),
+    db=Depends(get_db),
 ):
+    """Return stories from DB (AI-generated) with fallback to static seed data."""
+    from db.models import Story as StoryModel
+    from fastapi import HTTPException
+
+    try:
+        query = db.query(StoryModel).order_by(StoryModel.published_at.desc())
+        if category:
+            query = query.filter(StoryModel.category.ilike(category))
+        total = query.count()
+
+        if total > 0:
+            offset = (page - 1) * per_page
+            rows = query.offset(offset).limit(per_page).all()
+            return StoryListResponse(
+                stories=[
+                    StoryResponse(
+                        id=r.id,
+                        title=r.title,
+                        summary=r.summary or "",
+                        content=r.content or "",
+                        category=r.category,
+                        read_time=r.read_time or "5 min",
+                        author=r.author or "CosmicGuide",
+                        published_at=r.published_at,
+                    )
+                    for r in rows
+                ],
+                total=total,
+                page=page,
+                per_page=per_page,
+            )
+    except Exception as exc:
+        from logger import get_logger
+        get_logger(__name__).warning("stories list DB query failed (%s) — using static", exc)
+
+    # Static fallback
     filtered = STORIES
     if category:
         filtered = [s for s in STORIES if s["category"].lower() == category.lower()]
-
     total = len(filtered)
     start = (page - 1) * per_page
-    end = start + per_page
-    page_stories = filtered[start:end]
-
     return StoryListResponse(
-        stories=page_stories,
+        stories=filtered[start : start + per_page],
         total=total,
         page=page,
         per_page=per_page,
@@ -128,8 +162,28 @@ def list_stories(
 
 
 @router.get("/{story_id}", response_model=StoryResponse)
-def get_story(story_id: int):
+def get_story(story_id: int, db=Depends(get_db)):
+    """Return a single story by ID from DB, fallback to static list."""
     from fastapi import HTTPException
+    from db.models import Story as StoryModel
+
+    try:
+        row = db.query(StoryModel).filter(StoryModel.id == story_id).first()
+        if row:
+            return StoryResponse(
+                id=row.id,
+                title=row.title,
+                summary=row.summary or "",
+                content=row.content or "",
+                category=row.category,
+                read_time=row.read_time or "5 min",
+                author=row.author or "CosmicGuide",
+                published_at=row.published_at,
+            )
+    except Exception as exc:
+        from logger import get_logger
+        get_logger(__name__).warning("stories get_story DB query failed (%s)", exc)
+
     story = next((s for s in STORIES if s["id"] == story_id), None)
     if not story:
         raise HTTPException(status_code=404, detail="Story not found")

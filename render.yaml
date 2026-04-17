@@ -16,3 +16,5 @@ services:
         value: ""
       - key: AI_MODEL
         value: gemini-2.5-flash-lite
+      - key: LOG_LEVEL
+        value: INFO   # Change to DEBUG for verbose logging, WARNING to reduce noise

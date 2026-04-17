@@ -1,8 +1,16 @@
 """Kundli (Gun Milan) matching calculation."""
 
+from logger import get_logger
+
+logger = get_logger(__name__)
+
 
 def calculate_kundli(person1: dict, person2: dict) -> dict:
     """Calculate Kundli matching (mock implementation — returns element-based results)."""
+    logger.info(
+        "calculate_kundli  person1=%s  person2=%s  [NOTE: mock implementation]",
+        person1.get("name", "?"), person2.get("name", "?"),
+    )
     koota_scores = {
         "Varna": 1,
         "Vashya": 1,
@@ -32,6 +40,10 @@ def calculate_kundli(person1: dict, person2: dict) -> dict:
         "a Vedic astrologer for a detailed birth chart analysis."
     )
 
+    logger.debug(
+        "calculate_kundli  total=%d/%d  compatibility=%s",
+        total, max_score, compatibility,
+    )
     return {
         "total_score": total,
         "max_score": max_score,

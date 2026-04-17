@@ -282,6 +282,169 @@ Rules:
 #  KUNDLI / BIRTH CHART PROMPT
 # ────────────────────────────────────────────────────────────────────────────
 
+# ────────────────────────────────────────────────────────────────────────────
+#  BATCH FORTUNE POOL PROMPT  (6 signs × 5 topics × 3 fortunes in one call)
+# ────────────────────────────────────────────────────────────────────────────
+
+FORTUNE_TOPICS = ["Love", "Career", "Health", "Wealth", "Spiritual"]
+
+
+def batch_fortune_pool_prompt(signs: list, for_date: date) -> str:
+    """
+    Generates a daily pool of 3 fortunes for each sign × topic combination.
+
+    Call twice (6 signs each) to cover all 12 signs with 2 LLM calls.
+
+    Expected response shape:
+    {
+      "Aries": {
+        "Love":     ["fortune_a", "fortune_b", "fortune_c"],
+        "Career":   ["fortune_a", "fortune_b", "fortune_c"],
+        "Health":   [...],
+        "Wealth":   [...],
+        "Spiritual":[...]
+      },
+      ...
+    }
+    """
+    month_name = for_date.strftime("%B")
+    day_name = for_date.strftime("%A")
+    day_num = for_date.day
+    year = for_date.year
+    signs_str = ", ".join(signs)
+    topics_str = ", ".join(FORTUNE_TOPICS)
+
+    return f"""Generate a daily fortune pool for CosmicGuide for {day_name}, {month_name} {day_num}, {year}.
+Signs to generate for: {signs_str}
+Topics for each sign: {topics_str}
+
+Return ONLY a valid JSON object where:
+- Each key is a zodiac sign name from the list above.
+- Each sign maps to an object where keys are the 5 topic names.
+- Each topic maps to an array of EXACTLY 3 distinct fortune strings.
+
+Fortune requirements (apply to all 180 fortunes):
+- Each fortune is 2-3 sentences, 45-60 words.
+- Cosmic and poetic — reference celestial imagery (stars, planets, moon, light).
+- Speak directly to the reader using "you" and "your".
+- Offer genuine hope and a subtle action hint.
+- Every fortune must be UNIQUE — no two fortunes across any sign or topic may share the same opening.
+- Ground each fortune in the sign's ruling planet, element, and personality traits.
+- Reference the seasonal energy of {month_name} {year}.
+- Vary tone across the 3 variants: one introspective, one action-oriented, one reassuring.
+
+Return ONLY the JSON object, no extra text."""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+#  BATCH COMPATIBILITY PAIRS PROMPT  (~20 sign pairs in one call)
+# ────────────────────────────────────────────────────────────────────────────
+
+def batch_compatibility_pairs_prompt(pairs: list) -> str:
+    """
+    Generates compatibility analysis for a batch of zodiac sign pairs.
+
+    pairs: list of dicts {"sign1": str, "sign2": str, "score": int}
+
+    Expected response shape:
+    [
+      {
+        "sign1": "Aries", "sign2": "Leo",
+        "description": "...",
+        "love_advice": "...",
+        "strengths_together": "...",
+        "challenges": "..."
+      },
+      ...
+    ]
+    """
+    pairs_list = "\n".join(
+        f'{i + 1}. {p["sign1"]} + {p["sign2"]} (base score: {p["score"]}/100)'
+        for i, p in enumerate(pairs)
+    )
+
+    score_harmony = {
+        "high (80-100)": "natural harmony and powerful chemistry",
+        "medium (60-79)": "dynamic contrast and growth potential",
+        "low (below 60)": "intense friction that, when navigated wisely, forges deep transformation",
+    }
+    harmony_note = (
+        "Score >= 80 → natural harmony; 60-79 → dynamic contrast; < 60 → transformative tension."
+    )
+
+    return f"""Generate complete romantic compatibility analyses for the following {len(pairs)} zodiac sign pairs.
+{harmony_note}
+
+Pairs to analyze:
+{pairs_list}
+
+Return ONLY a valid JSON array of {len(pairs)} objects in the SAME ORDER as the list above.
+Each object must have these exact keys:
+- "sign1"             — first sign name (copy from pair list)
+- "sign2"             — second sign name (copy from pair list)
+- "description"        — overall relationship dynamic (3-4 sentences, 70-90 words)
+- "love_advice"        — practical guidance for this pairing (2-3 sentences, 50-65 words)
+- "strengths_together" — what makes this pair powerful together (2-3 sentences, 50-65 words)
+- "challenges"         — honest but growth-oriented challenge framing (2-3 sentences, 50-65 words)
+
+Rules:
+- Ground each analysis in both signs' ruling planets, elements, modalities, and core traits.
+- Each pair's analysis must be UNIQUE — no copy-paste between pairs.
+- Tone: insightful, romantic, and empowering.
+- Return ONLY the JSON array, no extra text."""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+#  BATCH TAROT INTERPRETATIONS PROMPT  (AI-quality for a group of cards)
+# ────────────────────────────────────────────────────────────────────────────
+
+def batch_tarot_group_prompt(cards: list) -> str:
+    """
+    Generates AI-quality upright + reversed interpretations for a group of tarot cards.
+
+    cards: list of dicts {"name": str, "number": str, "meaning": str}
+
+    Expected response shape:
+    [
+      {
+        "name": "The Fool",
+        "upright_interpretation": "...",   // 3-4 sentences, 70-90 words
+        "reversed_interpretation": "..."   // 3-4 sentences, 70-90 words
+      },
+      ...
+    ]
+    """
+    cards_list = "\n".join(
+        f'{i + 1}. {c["name"]} ({c["number"]}) — Core meaning: {c["meaning"]}'
+        for i, c in enumerate(cards)
+    )
+
+    return f"""Generate mystical tarot card interpretations for the following {len(cards)} cards.
+
+Cards:
+{cards_list}
+
+Return ONLY a valid JSON array of {len(cards)} objects in the SAME ORDER as the list above.
+Each object must have these exact keys:
+- "name"                    — card name (copy exactly)
+- "upright_interpretation"  — upright reading (3-4 sentences, 70-90 words)
+- "reversed_interpretation" — reversed reading (3-4 sentences, 70-90 words)
+
+Requirements for EVERY interpretation:
+- Reference the card's core symbolism, archetype, and imagery.
+- Upright: highlight opportunities, positive energies, and actionable insight.
+- Reversed: acknowledge the shadow/challenge, then pivot clearly to empowerment.
+- Mystical, evocative language with celestial and elemental imagery.
+- End each interpretation with a gentle, concrete action insight.
+- Each card's content must be UNIQUE — grounded in that card's specific archetype.
+
+Return ONLY the JSON array, no extra text."""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+#  KUNDLI / BIRTH CHART PROMPT
+# ────────────────────────────────────────────────────────────────────────────
+
 def kundli_personality_prompt(zodiac_sign: str, birth_date: str,
                                birth_time: str = None, birth_place: str = None) -> str:
     """

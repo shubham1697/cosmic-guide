@@ -1,19 +1,13 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/zodiac.dart';
 import '../data/mock_data.dart';
 
 class ApiService {
-  // Use 10.0.2.2 for Android emulator, localhost for iOS simulator
-  static String get _baseUrl {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api/v1';
-    }
-    return 'http://localhost:8000/api/v1';
-  }
+  static const String _baseUrl = 'https://cosmic-guide.onrender.com/api/v1';
 
-  static const _timeout = Duration(seconds: 5);
+  // Render free tier can take 15-30s to cold-start; use a generous timeout.
+  static const _timeout = Duration(seconds: 20);
 
   /// Fetch today's horoscope for a sign. Falls back to mock data on failure.
   static Future<HoroscopeData> getHoroscope(String sign) async {

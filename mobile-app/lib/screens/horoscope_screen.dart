@@ -9,7 +9,11 @@ import '../widgets/starry_background.dart';
 class HoroscopeScreen extends StatefulWidget {
   final String userSign;
   final HoroscopeData? initialHoroscope;
-  const HoroscopeScreen({super.key, required this.userSign, this.initialHoroscope});
+  const HoroscopeScreen({
+    super.key,
+    required this.userSign,
+    this.initialHoroscope,
+  });
 
   @override
   State<HoroscopeScreen> createState() => _HoroscopeScreenState();

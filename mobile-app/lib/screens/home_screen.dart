@@ -44,7 +44,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _horoscope = widget.initialHoroscope ?? MockData.getHoroscope(widget.userSign);
+    _horoscope =
+        widget.initialHoroscope ?? MockData.getHoroscope(widget.userSign);
     _isLoading = widget.initialHoroscope == null;
     _loadData();
     _loadDailyTarot();
