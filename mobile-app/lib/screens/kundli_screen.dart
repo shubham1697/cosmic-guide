@@ -6,7 +6,9 @@ import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
 class KundliScreen extends StatefulWidget {
-  const KundliScreen({super.key});
+  final bool embedded;
+
+  const KundliScreen({super.key, this.embedded = false});
 
   @override
   State<KundliScreen> createState() => _KundliScreenState();
@@ -125,8 +127,74 @@ class _KundliScreenState extends State<KundliScreen> {
       _placeController1.text.isNotEmpty &&
       _placeController2.text.isNotEmpty;
 
+  Widget _buildContent(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Text(
+            'Gun Milan',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: AppColors.accent,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Ashta Koota compatibility analysis',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 32),
+          _buildPersonForm(
+            'Person 1',
+            _nameController1,
+            _dob1,
+            _time1,
+            _placeController1,
+            true,
+          ),
+          const SizedBox(height: 20),
+          _buildPersonForm(
+            'Person 2',
+            _nameController2,
+            _dob2,
+            _time2,
+            _placeController2,
+            false,
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (_isFormValid && !_isCalculating)
+                  ? _calculateKundli
+                  : null,
+              icon: _isCalculating
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  : const Icon(Icons.calculate),
+              label: Text(
+                _isCalculating ? 'Calculating...' : 'Calculate Kundli',
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (_result != null) _buildResultSection(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) return _buildContent(context);
     return StarryBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -134,68 +202,7 @@ class _KundliScreenState extends State<KundliScreen> {
           title: Text('Kundli Matching', style: GoogleFonts.playfairDisplay()),
           backgroundColor: Colors.transparent,
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Text(
-                'Gun Milan',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.accent,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Ashta Koota compatibility analysis',
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 32),
-              _buildPersonForm(
-                'Person 1',
-                _nameController1,
-                _dob1,
-                _time1,
-                _placeController1,
-                true,
-              ),
-              const SizedBox(height: 20),
-              _buildPersonForm(
-                'Person 2',
-                _nameController2,
-                _dob2,
-                _time2,
-                _placeController2,
-                false,
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: (_isFormValid && !_isCalculating)
-                      ? _calculateKundli
-                      : null,
-                  icon: _isCalculating
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.primary,
-                          ),
-                        )
-                      : const Icon(Icons.calculate),
-                  label: Text(
-                    _isCalculating ? 'Calculating...' : 'Calculate Kundli',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              if (_result != null) _buildResultSection(),
-            ],
-          ),
-        ),
+        body: _buildContent(context),
       ),
     );
   }

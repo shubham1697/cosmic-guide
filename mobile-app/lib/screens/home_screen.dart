@@ -12,22 +12,16 @@ class HomeScreen extends StatefulWidget {
   final String userName;
   final String userSign;
   final HoroscopeData? initialHoroscope;
-  final VoidCallback onHoroscopeTap;
-  final VoidCallback onTarotTap;
-  final VoidCallback onFortuneTap;
-  final VoidCallback onCompatibilityTap;
-  final VoidCallback onKundliTap;
+  final VoidCallback onChartTap;
+  final VoidCallback onDiscoverTap;
 
   const HomeScreen({
     super.key,
     required this.userName,
     required this.userSign,
     this.initialHoroscope,
-    required this.onHoroscopeTap,
-    required this.onTarotTap,
-    required this.onFortuneTap,
-    required this.onCompatibilityTap,
-    required this.onKundliTap,
+    required this.onChartTap,
+    required this.onDiscoverTap,
   });
 
   @override
@@ -142,8 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 24),
                 _buildDailyTarotWidget(context),
                 const SizedBox(height: 24),
-                _buildQuickActions(context),
-                const SizedBox(height: 24),
                 _buildStoryFeed(context),
               ],
             ),
@@ -195,7 +187,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildDailyCard(BuildContext context, dynamic horoscope) {
     return GestureDetector(
-      onTap: widget.onHoroscopeTap,
+      onTap: widget.onChartTap,
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -598,7 +590,7 @@ class _HomeScreenState extends State<HomeScreen> {
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
-                  widget.onTarotTap();
+                  widget.onDiscoverTap();
                 },
                 icon: const Icon(Icons.style, size: 18),
                 label: const Text('Draw Your Own Card'),
@@ -823,43 +815,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    final actions = [
-      _QuickAction('Tarot', Icons.style, AppColors.purple, widget.onTarotTap),
-      _QuickAction(
-        'Fortune',
-        Icons.auto_awesome,
-        AppColors.accent,
-        widget.onFortuneTap,
-      ),
-      _QuickAction(
-        'Match',
-        Icons.favorite,
-        AppColors.love,
-        widget.onCompatibilityTap,
-      ),
-      _QuickAction(
-        'Kundli',
-        Icons.circle_outlined,
-        AppColors.mysticTeal,
-        widget.onKundliTap,
-      ),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Explore', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 16),
-        Row(
-          children: actions.map((action) {
-            return Expanded(child: _QuickActionTile(action: action));
-          }).toList(),
-        ),
-      ],
-    );
-  }
-
   Widget _buildStoryFeed(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -946,97 +901,5 @@ class _HomeScreenState extends State<HomeScreen> {
     if (hour < 12) return 'Morning';
     if (hour < 17) return 'Afternoon';
     return 'Evening';
-  }
-}
-
-class _QuickAction {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  const _QuickAction(this.label, this.icon, this.color, this.onTap);
-}
-
-class _QuickActionTile extends StatefulWidget {
-  final _QuickAction action;
-  const _QuickActionTile({required this.action});
-
-  @override
-  State<_QuickActionTile> createState() => _QuickActionTileState();
-}
-
-class _QuickActionTileState extends State<_QuickActionTile> {
-  bool _isPressed = false;
-
-  void _setPressed(bool value) {
-    if (_isPressed == value) return;
-    setState(() => _isPressed = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final action = widget.action;
-    return AnimatedScale(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-      scale: _isPressed ? 0.96 : 1,
-      child: GestureDetector(
-        onTapDown: (_) => _setPressed(true),
-        onTapCancel: () => _setPressed(false),
-        onTapUp: (_) => _setPressed(false),
-        onTap: action.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.card.withAlpha(245),
-                action.color.withAlpha(36),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: action.color.withAlpha(_isPressed ? 170 : 95),
-              width: _isPressed ? 1.6 : 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(40),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: action.color.withAlpha(_isPressed ? 90 : 30),
-                blurRadius: _isPressed ? 16 : 8,
-                spreadRadius: _isPressed ? 1.5 : 0,
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              AnimatedScale(
-                duration: const Duration(milliseconds: 140),
-                scale: _isPressed ? 1.06 : 1,
-                child: Icon(action.icon, color: action.color, size: 32),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                action.label,
-                style: TextStyle(
-                  color: action.color,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

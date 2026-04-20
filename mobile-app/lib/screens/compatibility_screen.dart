@@ -6,7 +6,9 @@ import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
 class CompatibilityScreen extends StatefulWidget {
-  const CompatibilityScreen({super.key});
+  final bool embedded;
+
+  const CompatibilityScreen({super.key, this.embedded = false});
 
   @override
   State<CompatibilityScreen> createState() => _CompatibilityScreenState();
@@ -30,8 +32,79 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
     }
   }
 
+  Widget _buildContent(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Text(
+            'Zodiac Match',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Select two signs to check compatibility',
+            style: TextStyle(color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 32),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSignPicker(
+                  'Your Sign',
+                  _sign1,
+                  (v) => setState(() => _sign1 = v),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Icon(Icons.favorite, color: AppColors.love, size: 32),
+              ),
+              Expanded(
+                child: _buildSignPicker(
+                  'Their Sign',
+                  _sign2,
+                  (v) => setState(() => _sign2 = v),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 32),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: (_sign1 != null && _sign2 != null && !_isChecking)
+                  ? _checkCompatibility
+                  : null,
+              icon: _isChecking
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.primary,
+                      ),
+                    )
+                  : const Icon(Icons.favorite),
+              label: Text(
+                _isChecking ? 'Matching Stars...' : 'Check Compatibility',
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          if (_result != null) _buildResultCard(),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.embedded) return _buildContent(context);
     return StarryBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
@@ -39,77 +112,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
           title: Text('Compatibility', style: GoogleFonts.playfairDisplay()),
           backgroundColor: Colors.transparent,
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              Text(
-                'Zodiac Match',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Select two signs to check compatibility',
-                style: TextStyle(color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildSignPicker(
-                      'Your Sign',
-                      _sign1,
-                      (v) => setState(() => _sign1 = v),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Icon(
-                      Icons.favorite,
-                      color: AppColors.love,
-                      size: 32,
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildSignPicker(
-                      'Their Sign',
-                      _sign2,
-                      (v) => setState(() => _sign2 = v),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: (_sign1 != null && _sign2 != null && !_isChecking)
-                      ? _checkCompatibility
-                      : null,
-                  icon: _isChecking
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppColors.primary,
-                          ),
-                        )
-                      : const Icon(Icons.favorite),
-                  label: Text(
-                    _isChecking ? 'Matching Stars...' : 'Check Compatibility',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              if (_result != null) _buildResultCard(),
-            ],
-          ),
-        ),
+        body: _buildContent(context),
       ),
     );
   }

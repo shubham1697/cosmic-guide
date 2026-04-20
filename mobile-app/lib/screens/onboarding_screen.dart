@@ -345,11 +345,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   Widget _buildBirthDetailsPage() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(40),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
+          const SizedBox(height: 24),
           const Icon(Icons.access_time, color: AppColors.purple, size: 56),
           const SizedBox(height: 24),
           Text(

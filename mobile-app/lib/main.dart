@@ -4,11 +4,9 @@ import 'theme/app_theme.dart';
 import 'models/zodiac.dart';
 import 'services/api_service.dart';
 import 'screens/home_screen.dart';
-import 'screens/horoscope_screen.dart';
-import 'screens/tarot_screen.dart';
-import 'screens/fortune_screen.dart';
-import 'screens/compatibility_screen.dart';
-import 'screens/kundli_screen.dart';
+import 'screens/chart_screen.dart';
+import 'screens/discover_screen.dart';
+import 'screens/match_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/onboarding_screen.dart';
 
@@ -99,16 +97,43 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   HoroscopeData? _sharedHoroscope;
+  String _userName = '';
+  String _userSign = '';
 
   @override
   void initState() {
     super.initState();
+    _userName = widget.userName;
+    _userSign = widget.userSign;
     _fetchSharedHoroscope();
   }
 
+  @override
+  void didUpdateWidget(MainShell old) {
+    super.didUpdateWidget(old);
+    // Sync when AppEntry re-passes updated prefs values
+    if (widget.userName != old.userName && _userName == old.userName) {
+      _userName = widget.userName;
+    }
+    if (widget.userSign != old.userSign && _userSign == old.userSign) {
+      _userSign = widget.userSign;
+      _sharedHoroscope = null;
+      _fetchSharedHoroscope();
+    }
+  }
+
   Future<void> _fetchSharedHoroscope() async {
-    final data = await ApiService.getHoroscope(widget.userSign);
+    final data = await ApiService.getHoroscope(_userSign);
     if (mounted) setState(() => _sharedHoroscope = data);
+  }
+
+  void _onProfileUpdated(String name, String sign) {
+    setState(() {
+      _userName = name;
+      _userSign = sign;
+      _sharedHoroscope = null;
+    });
+    _fetchSharedHoroscope();
   }
 
   void _navigateToTab(int index) {
@@ -119,24 +144,20 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     final screens = [
       HomeScreen(
-        userName: widget.userName,
-        userSign: widget.userSign,
+        userName: _userName,
+        userSign: _userSign,
         initialHoroscope: _sharedHoroscope,
-        onHoroscopeTap: () => _navigateToTab(1),
-        onTarotTap: () => _pushScreen(context, const TarotScreen()),
-        onFortuneTap: () =>
-            _pushScreen(context, FortuneScreen(userSign: widget.userSign)),
-        onCompatibilityTap: () =>
-            _pushScreen(context, const CompatibilityScreen()),
-        onKundliTap: () => _pushScreen(context, const KundliScreen()),
+        onChartTap: () => _navigateToTab(1),
+        onDiscoverTap: () => _navigateToTab(2),
       ),
-      HoroscopeScreen(
-        userSign: widget.userSign,
-        initialHoroscope: _sharedHoroscope,
+      ChartScreen(userSign: _userSign, initialHoroscope: _sharedHoroscope),
+      DiscoverScreen(userSign: _userSign),
+      const MatchScreen(),
+      ProfileScreen(
+        userSign: _userSign,
+        userName: _userName,
+        onProfileUpdated: _onProfileUpdated,
       ),
-      const TarotScreen(),
-      const CompatibilityScreen(),
-      ProfileScreen(userSign: widget.userSign, userName: widget.userName),
     ];
 
     return Scaffold(
@@ -164,12 +185,12 @@ class _MainShellState extends State<MainShell> {
             BottomNavigationBarItem(
               icon: Icon(Icons.auto_awesome_outlined),
               activeIcon: Icon(Icons.auto_awesome),
-              label: 'Horoscope',
+              label: 'Chart',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.style_outlined),
-              activeIcon: Icon(Icons.style),
-              label: 'Tarot',
+              icon: Icon(Icons.explore_outlined),
+              activeIcon: Icon(Icons.explore),
+              label: 'Discover',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.favorite_outline),
@@ -185,9 +206,5 @@ class _MainShellState extends State<MainShell> {
         ),
       ),
     );
-  }
-
-  void _pushScreen(BuildContext context, Widget screen) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
   }
 }
