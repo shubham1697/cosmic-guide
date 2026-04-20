@@ -8,3 +8,6 @@ psycopg2-binary==2.9.*
 python-jose[cryptography]==3.3.*
 passlib[bcrypt]==1.7.*
 python-multipart==0.0.*
+pyswisseph==2.10.*
+geopy==2.4.*
+timezonefinder==8.2.*

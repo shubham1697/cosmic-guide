@@ -144,3 +144,100 @@ class StoryListResponse(CamelModel):
     total: int
     page: int
     per_page: int
+
+
+# --- Birth Chart Schemas ---
+
+class BirthChartRequest(CamelModel):
+    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
+    birth_time: Optional[str] = None   # HH:MM (24h)
+    birth_place: Optional[str] = None
+
+
+class PlanetPosition(CamelModel):
+    name: str
+    symbol: str
+    longitude: float
+    latitude: float
+    speed: float
+    sign: str
+    sign_symbol: str
+    degree_in_sign: float
+    degree_display: str
+    is_retrograde: bool
+
+
+class HouseCusp(CamelModel):
+    house: int
+    cusp_longitude: float
+    sign: str
+    degree_in_sign: float
+    degree_display: str
+
+
+class Big3Entry(CamelModel):
+    sign: str
+    degree: str
+    description: str
+    is_estimated: Optional[bool] = None
+
+
+class Big3(CamelModel):
+    sun: Big3Entry
+    moon: Big3Entry
+    rising: Big3Entry
+
+
+class NakshatraInfo(CamelModel):
+    name: str
+    pada: int
+    lord: str
+
+
+class PointInfo(CamelModel):
+    longitude: float
+    sign: str
+    degree_display: str
+
+
+class AspectInfo(CamelModel):
+    planet1: str
+    planet2: str
+    aspect: str
+    angle: float
+    orb: float
+
+
+class BirthInfo(CamelModel):
+    date: str
+    time: str
+    place: str
+    latitude: float
+    longitude: float
+    timezone: str
+
+
+class BirthChartResponse(CamelModel):
+    birth_info: BirthInfo
+    planets: list[PlanetPosition]
+    houses: list[HouseCusp]
+    big3: Big3
+    moon_nakshatra: NakshatraInfo
+    ascendant: PointInfo
+    midheaven: PointInfo
+    aspects: list[AspectInfo]
+    has_accurate_houses: bool
+
+
+class TransitPosition(CamelModel):
+    name: str
+    symbol: str
+    longitude: float
+    sign: str
+    degree_in_sign: float
+    degree_display: str
+    is_retrograde: bool
+
+
+class TransitsResponse(CamelModel):
+    transits: list[TransitPosition]

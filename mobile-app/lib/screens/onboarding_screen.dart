@@ -128,6 +128,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         '${_birthTime!.hour.toString().padLeft(2, '0')}:${_birthTime!.minute.toString().padLeft(2, '0')}',
       );
     }
+    if (_birthDate != null) {
+      await prefs.setString(
+        'birthDate',
+        '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}',
+      );
+    }
     if (_birthPlaceController.text.isNotEmpty) {
       await prefs.setString('birthPlace', _birthPlaceController.text);
     }

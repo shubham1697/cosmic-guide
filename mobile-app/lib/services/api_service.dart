@@ -4,7 +4,8 @@ import '../models/zodiac.dart';
 import '../data/mock_data.dart';
 
 class ApiService {
-  static const String _baseUrl = 'https://cosmic-guide.onrender.com/api/v1';
+  // Local backend (Docker): use 10.0.2.2 for Android emulator, localhost for iOS/web
+  static const String _baseUrl = 'http://localhost:8000/api/v1';
 
   // Render free tier can take 15-30s to cold-start; use a generous timeout.
   static const _timeout = Duration(seconds: 20);
@@ -194,5 +195,46 @@ class ApiService {
       }
     } catch (_) {}
     return MockData.stories;
+  }
+
+  /// Fetch a full birth chart calculated with Swiss Ephemeris.
+  static Future<BirthChartData?> getBirthChart({
+    required String birthDate,
+    String? birthTime,
+    String? birthPlace,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/chart/birth'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'birthDate': birthDate,
+              'birthTime': birthTime,
+              'birthPlace': birthPlace,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return BirthChartData.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Fetch current planetary transits.
+  static Future<List<TransitData>> getTransits() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/chart/transits'))
+          .timeout(_timeout);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final transits = data['transits'] as List;
+        return transits.map((t) => TransitData.fromJson(t)).toList();
+      }
+    } catch (_) {}
+    return [];
   }
 }

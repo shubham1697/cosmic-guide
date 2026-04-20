@@ -99,6 +99,9 @@ class _MainShellState extends State<MainShell> {
   HoroscopeData? _sharedHoroscope;
   String _userName = '';
   String _userSign = '';
+  String _birthDate = '';
+  String _birthTime = '';
+  String _birthPlace = '';
 
   @override
   void initState() {
@@ -106,6 +109,18 @@ class _MainShellState extends State<MainShell> {
     _userName = widget.userName;
     _userSign = widget.userSign;
     _fetchSharedHoroscope();
+    _loadBirthData();
+  }
+
+  Future<void> _loadBirthData() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _birthDate = prefs.getString('birthDate') ?? '';
+        _birthTime = prefs.getString('birthTime') ?? '';
+        _birthPlace = prefs.getString('birthPlace') ?? '';
+      });
+    }
   }
 
   @override
@@ -134,6 +149,7 @@ class _MainShellState extends State<MainShell> {
       _sharedHoroscope = null;
     });
     _fetchSharedHoroscope();
+    _loadBirthData();
   }
 
   void _navigateToTab(int index) {
@@ -150,7 +166,13 @@ class _MainShellState extends State<MainShell> {
         onChartTap: () => _navigateToTab(1),
         onDiscoverTap: () => _navigateToTab(2),
       ),
-      ChartScreen(userSign: _userSign, initialHoroscope: _sharedHoroscope),
+      ChartScreen(
+        userSign: _userSign,
+        initialHoroscope: _sharedHoroscope,
+        birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+        birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+        birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+      ),
       DiscoverScreen(userSign: _userSign),
       const MatchScreen(),
       ProfileScreen(

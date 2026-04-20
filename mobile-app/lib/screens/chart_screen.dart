@@ -7,190 +7,69 @@ import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
-// ─── Static planet/transit data ──────────────────────────────────────────────
+// ─── Planet color mapping ────────────────────────────────────────────────────
 
-class _Planet {
-  final String symbol;
-  final String name;
-  final int degreeOffset; // 0–359, position on wheel
-  final Color color;
-  final String inSign; // which zodiac sign it's currently in
-  final String placement; // one-line meaning of planet in this sign
+const Map<String, Color> _planetColors = {
+  'Sun': Color(0xFFFFD700),
+  'Moon': Color(0xFFE0E0E0),
+  'Mercury': Color(0xFF9E9E9E),
+  'Venus': Color(0xFFE91E63),
+  'Mars': Color(0xFFFF5722),
+  'Jupiter': Color(0xFFFF9800),
+  'Saturn': Color(0xFF78909C),
+  'Uranus': Color(0xFF00BCD4),
+  'Neptune': Color(0xFF7C4DFF),
+  'Pluto': Color(0xFF795548),
+};
 
-  const _Planet({
-    required this.symbol,
-    required this.name,
-    required this.degreeOffset,
-    required this.color,
-    required this.inSign,
-    required this.placement,
-  });
-}
-
-class _Transit {
-  final String planet;
-  final String symbol;
-  final String influence;
-  final String detail;
-  final Color color;
-
-  const _Transit({
-    required this.planet,
-    required this.symbol,
-    required this.influence,
-    required this.detail,
-    required this.color,
-  });
-}
-
-// Planets positioned relative to the chart wheel.
-// degreeOffset 0–359 maps directly onto the zodiac ring (0 = start of Aries).
-// Replace with real ephemeris data from backend when available.
-const List<_Planet> _planets = [
-  _Planet(
-    symbol: '☉',
-    name: 'Sun',
-    degreeOffset: 15,
-    color: Color(0xFFFFD700),
-    inSign: 'Aries',
-    placement: 'Bold identity, natural leader, self-starter energy.',
-  ),
-  _Planet(
-    symbol: '☽',
-    name: 'Moon',
-    degreeOffset: 75,
-    color: Color(0xFFE0E0E0),
-    inSign: 'Gemini',
-    placement: 'Emotionally curious, needs variety and conversation.',
-  ),
-  _Planet(
-    symbol: '☿',
-    name: 'Mercury',
-    degreeOffset: 30,
-    color: Color(0xFF9E9E9E),
-    inSign: 'Taurus',
-    placement: 'Slow, deliberate thinker; persuasive and grounded speech.',
-  ),
-  _Planet(
-    symbol: '♀',
-    name: 'Venus',
-    degreeOffset: 330,
-    color: Color(0xFFE91E63),
-    inSign: 'Pisces',
-    placement: 'Romantic idealist, deeply empathetic in love.',
-  ),
-  _Planet(
-    symbol: '♂',
-    name: 'Mars',
-    degreeOffset: 160,
-    color: Color(0xFFFF5722),
-    inSign: 'Virgo',
-    placement: 'Precise drive, works hard on details and improvement.',
-  ),
-  _Planet(
-    symbol: '♃',
-    name: 'Jupiter',
-    degreeOffset: 210,
-    color: Color(0xFFFF9800),
-    inSign: 'Scorpio',
-    placement: 'Growth through depth, transformation, and intensity.',
-  ),
-  _Planet(
-    symbol: '♄',
-    name: 'Saturn',
-    degreeOffset: 270,
-    color: Color(0xFF78909C),
-    inSign: 'Capricorn',
-    placement: 'Disciplined, ambitious, strong sense of responsibility.',
-  ),
-  _Planet(
-    symbol: '♅',
-    name: 'Uranus',
-    degreeOffset: 125,
-    color: Color(0xFF00BCD4),
-    inSign: 'Leo',
-    placement: 'Rebels with flair; original, dramatic self-expression.',
-  ),
-  _Planet(
-    symbol: '♆',
-    name: 'Neptune',
-    degreeOffset: 300,
-    color: Color(0xFF7C4DFF),
-    inSign: 'Aquarius',
-    placement: 'Idealistic vision for humanity, spiritual innovation.',
-  ),
-];
-
-List<_Transit> _transitsForSign(String sign) {
-  // Symbolic transits derived from the sign's element and ruling planet
-  final signData = MockData.zodiacSigns.firstWhere(
-    (z) => z.name == sign,
-    orElse: () => MockData.zodiacSigns.first,
-  );
-
-  final element = signData.element;
-
-  String mercuryInfluence;
-  String venusInfluence;
-  String marsInfluence;
-
-  if (element == 'Fire') {
-    mercuryInfluence = 'Sharp thinking, bold communication';
-    venusInfluence = 'Passionate connections draw near';
-    marsInfluence = 'Energy peaks — act on ambitions';
-  } else if (element == 'Earth') {
-    mercuryInfluence = 'Practical plans crystallise clearly';
-    venusInfluence = 'Stability and sensual pleasures favour you';
-    marsInfluence = 'Steady momentum builds toward goals';
-  } else if (element == 'Air') {
-    mercuryInfluence = 'Ideas flow freely, speak your truth';
-    venusInfluence = 'Social bonds deepen and charm radiates';
-    marsInfluence = 'Mental drive surges — strategise boldly';
-  } else {
-    // Water
-    mercuryInfluence = 'Intuitive insights guide key decisions';
-    venusInfluence = 'Emotional bonds intensify and heal';
-    marsInfluence = 'Inner resolve strengthens your purpose';
-  }
-
-  return [
-    _Transit(
-      planet: 'Mercury',
-      symbol: '☿',
-      influence: mercuryInfluence,
-      detail:
-          'Transit active — supports clear communication and quick thinking.',
-      color: const Color(0xFF9E9E9E),
-    ),
-    _Transit(
-      planet: 'Venus',
-      symbol: '♀',
-      influence: venusInfluence,
-      detail: 'Venus energy amplifies relationships and creativity today.',
-      color: const Color(0xFFE91E63),
-    ),
-    _Transit(
-      planet: 'Mars',
-      symbol: '♂',
-      influence: marsInfluence,
-      detail: 'Mars drive adds momentum — channel it constructively.',
-      color: const Color(0xFFFF5722),
-    ),
-  ];
+// Planet placement descriptions (keyed by "PlanetName-SignName")
+String _placementText(String planet, String sign) {
+  final key = '$planet-$sign';
+  const placements = {
+    'Sun-Aries': 'Bold identity, natural leader, self-starter energy.',
+    'Sun-Taurus': 'Steady, sensual, values comfort and material security.',
+    'Sun-Gemini': 'Quick-witted, curious, thrives on communication.',
+    'Sun-Cancer': 'Nurturing soul, emotional depth, family-oriented.',
+    'Sun-Leo': 'Radiant self-expression, generous, loves the spotlight.',
+    'Sun-Virgo': 'Analytical mind, service-oriented, detail-focused.',
+    'Sun-Libra': 'Harmony-seeker, diplomatic, values partnerships.',
+    'Sun-Scorpio': 'Intense, transformative, deeply perceptive.',
+    'Sun-Sagittarius': 'Adventurous spirit, philosophical, freedom-loving.',
+    'Sun-Capricorn': 'Ambitious, disciplined, builds lasting structures.',
+    'Sun-Aquarius': 'Innovative, humanitarian, marches to own beat.',
+    'Sun-Pisces': 'Dreamy, empathetic, artistically gifted.',
+    'Moon-Aries': 'Emotionally impulsive, needs independence and action.',
+    'Moon-Taurus': 'Emotionally steady, seeks comfort and sensory pleasure.',
+    'Moon-Gemini': 'Emotionally curious, needs variety and conversation.',
+    'Moon-Cancer': 'Deeply intuitive, emotionally rich, needs security.',
+    'Moon-Leo': 'Warm-hearted emotions, needs recognition and drama.',
+    'Moon-Virgo': 'Emotionally reserved, analyses feelings carefully.',
+    'Moon-Libra': 'Emotionally balanced, needs harmony in relationships.',
+    'Moon-Scorpio': 'Intense emotions, powerful instincts, deeply private.',
+    'Moon-Sagittarius': 'Emotionally adventurous, needs freedom and meaning.',
+    'Moon-Capricorn': 'Emotionally cautious, mature, needs achievement.',
+    'Moon-Aquarius': 'Emotionally detached, needs intellectual stimulation.',
+    'Moon-Pisces': 'Deeply empathetic, absorbs others emotions, dreamy.',
+  };
+  return placements[key] ?? '$planet in $sign — unique cosmic energy at play.';
 }
 
 // ─── Chart painter ────────────────────────────────────────────────────────────
 
 class _ChartPainter extends CustomPainter {
   final String sunSign;
-  final double animValue; // 0→1 for draw-on animation
+  final double animValue;
   final int? highlightedPlanetIndex;
+  final List<PlanetPosition> planets;
 
   const _ChartPainter({
     required this.sunSign,
     required this.animValue,
     this.highlightedPlanetIndex,
+    required this.planets,
   });
+
+  // ─── Chart painter paint method ──────────────────────────────────────────────
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -335,10 +214,11 @@ class _ChartPainter extends CustomPainter {
     }
 
     // ── Planet symbols on planet ring ───────────────────────────────────────
-    for (int idx = 0; idx < _planets.length; idx++) {
-      final planet = _planets[idx];
-      // Map degreeOffset (0–359) to wheel angle
-      final angleDeg = rotationOffset + planet.degreeOffset - 90;
+    for (int idx = 0; idx < planets.length; idx++) {
+      final planet = planets[idx];
+      final pColor = _planetColors[planet.name] ?? const Color(0xFFB0B8D1);
+      // Map longitude (0–359) to wheel angle
+      final angleDeg = rotationOffset + planet.longitude - 90;
       final angle = angleDeg * math.pi / 180;
 
       final isHighlighted = highlightedPlanetIndex == idx;
@@ -357,7 +237,7 @@ class _ChartPainter extends CustomPainter {
         lineStart,
         lineEnd,
         Paint()
-          ..color = planet.color.withAlpha(
+          ..color = pColor.withAlpha(
             (isHighlighted ? 200 : 60) * animValue ~/ 1,
           )
           ..strokeWidth = isHighlighted ? 1.5 : 1,
@@ -372,7 +252,7 @@ class _ChartPainter extends CustomPainter {
           ),
           isHighlighted ? 14 : 10,
           Paint()
-            ..color = planet.color.withAlpha(isHighlighted ? 80 : 35)
+            ..color = pColor.withAlpha(isHighlighted ? 80 : 35)
             ..style = PaintingStyle.fill,
         );
       }
@@ -383,7 +263,7 @@ class _ChartPainter extends CustomPainter {
           text: planet.symbol,
           style: TextStyle(
             fontSize: isHighlighted ? 17 : 15,
-            color: planet.color.withAlpha(alpha),
+            color: pColor.withAlpha(alpha),
             fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
           ),
         ),
@@ -412,7 +292,8 @@ class _ChartPainter extends CustomPainter {
   bool shouldRepaint(_ChartPainter old) =>
       old.animValue != animValue ||
       old.sunSign != sunSign ||
-      old.highlightedPlanetIndex != highlightedPlanetIndex;
+      old.highlightedPlanetIndex != highlightedPlanetIndex ||
+      old.planets != planets;
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -420,8 +301,18 @@ class _ChartPainter extends CustomPainter {
 class ChartScreen extends StatefulWidget {
   final String userSign;
   final HoroscopeData? initialHoroscope;
+  final String? birthDate; // YYYY-MM-DD
+  final String? birthTime; // HH:MM
+  final String? birthPlace;
 
-  const ChartScreen({super.key, required this.userSign, this.initialHoroscope});
+  const ChartScreen({
+    super.key,
+    required this.userSign,
+    this.initialHoroscope,
+    this.birthDate,
+    this.birthTime,
+    this.birthPlace,
+  });
 
   @override
   State<ChartScreen> createState() => _ChartScreenState();
@@ -435,6 +326,10 @@ class _ChartScreenState extends State<ChartScreen>
   late HoroscopeData _horoscope;
   bool _isLoading = true;
   int? _highlightedPlanet;
+
+  // Real birth chart data from backend
+  BirthChartData? _birthChart;
+  List<TransitData> _transits = [];
 
   @override
   void initState() {
@@ -454,6 +349,8 @@ class _ChartScreenState extends State<ChartScreen>
       _horoscope = MockData.getHoroscope(widget.userSign);
       _loadHoroscope();
     }
+    _loadBirthChart();
+    _loadTransits();
   }
 
   @override
@@ -465,6 +362,12 @@ class _ChartScreenState extends State<ChartScreen>
         _horoscope = widget.initialHoroscope!;
         _isLoading = false;
       });
+    }
+    // Re-fetch birth chart when birth details change
+    if (widget.birthDate != old.birthDate ||
+        widget.birthTime != old.birthTime ||
+        widget.birthPlace != old.birthPlace) {
+      _loadBirthChart();
     }
   }
 
@@ -480,6 +383,26 @@ class _ChartScreenState extends State<ChartScreen>
     }
   }
 
+  Future<void> _loadBirthChart() async {
+    if (widget.birthDate == null) return;
+    final chart = await ApiService.getBirthChart(
+      birthDate: widget.birthDate!,
+      birthTime: widget.birthTime,
+      birthPlace: widget.birthPlace,
+    );
+    if (mounted && chart != null) {
+      setState(() => _birthChart = chart);
+      _chartAnim.forward(from: 0);
+    }
+  }
+
+  Future<void> _loadTransits() async {
+    final transits = await ApiService.getTransits();
+    if (mounted && transits.isNotEmpty) {
+      setState(() => _transits = transits);
+    }
+  }
+
   @override
   void dispose() {
     _chartAnim.dispose();
@@ -492,14 +415,22 @@ class _ChartScreenState extends State<ChartScreen>
     final sign = MockData.zodiacSigns.firstWhere(
       (z) => z.name == widget.userSign,
     );
-    final transits = _transitsForSign(widget.userSign);
+
+    // Use real planet data if available, otherwise empty
+    final planets = _birthChart?.planets ?? [];
 
     return StarryBackground(
       child: SafeArea(
         child: RefreshIndicator(
           color: AppColors.accent,
           backgroundColor: AppColors.card,
-          onRefresh: _loadHoroscope,
+          onRefresh: () async {
+            await Future.wait([
+              _loadHoroscope(),
+              _loadBirthChart(),
+              _loadTransits(),
+            ]);
+          },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(20),
@@ -508,13 +439,17 @@ class _ChartScreenState extends State<ChartScreen>
               children: [
                 _buildHeader(sign),
                 const SizedBox(height: 24),
-                _buildChartWheel(),
+                _buildChartWheel(planets),
                 const SizedBox(height: 16),
-                _buildPlanetPlacements(),
+                _buildPlanetPlacements(planets),
                 const SizedBox(height: 24),
                 _buildBig3(sign),
+                if (_birthChart?.moonNakshatra != null) ...[
+                  const SizedBox(height: 24),
+                  _buildNakshatra(_birthChart!.moonNakshatra),
+                ],
                 const SizedBox(height: 24),
-                _buildTransits(transits),
+                _buildTransitsSection(),
                 const SizedBox(height: 24),
                 _buildHoroscopeSection(),
               ],
@@ -564,7 +499,7 @@ class _ChartScreenState extends State<ChartScreen>
     );
   }
 
-  Widget _buildChartWheel() {
+  Widget _buildChartWheel(List<PlanetPosition> planets) {
     return Center(
       child: SizedBox(
         width: 300,
@@ -576,6 +511,7 @@ class _ChartScreenState extends State<ChartScreen>
               sunSign: widget.userSign,
               animValue: _chartDraw.value,
               highlightedPlanetIndex: _highlightedPlanet,
+              planets: planets,
             ),
           ),
         ),
@@ -583,7 +519,27 @@ class _ChartScreenState extends State<ChartScreen>
     );
   }
 
-  Widget _buildPlanetPlacements() {
+  Widget _buildPlanetPlacements(List<PlanetPosition> planets) {
+    if (planets.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          children: [
+            const Icon(Icons.auto_awesome, color: AppColors.accent, size: 32),
+            const SizedBox(height: 12),
+            Text(
+              'Add your birth details in Profile\nto see real planet positions',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -610,9 +566,10 @@ class _ChartScreenState extends State<ChartScreen>
             crossAxisSpacing: 8,
             mainAxisSpacing: 8,
           ),
-          itemCount: _planets.length,
+          itemCount: planets.length,
           itemBuilder: (context, idx) {
-            final p = _planets[idx];
+            final p = planets[idx];
+            final pColor = _planetColors[p.name] ?? const Color(0xFFB0B8D1);
             final isSelected = _highlightedPlanet == idx;
             return GestureDetector(
               onTap: () {
@@ -623,10 +580,10 @@ class _ChartScreenState extends State<ChartScreen>
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: isSelected ? p.color.withAlpha(25) : AppColors.card,
+                  color: isSelected ? pColor.withAlpha(25) : AppColors.card,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: isSelected ? p.color : p.color.withAlpha(60),
+                    color: isSelected ? pColor : pColor.withAlpha(60),
                     width: isSelected ? 1.5 : 1,
                   ),
                 ),
@@ -635,7 +592,7 @@ class _ChartScreenState extends State<ChartScreen>
                   children: [
                     Text(
                       p.symbol,
-                      style: TextStyle(fontSize: 22, color: p.color),
+                      style: TextStyle(fontSize: 22, color: pColor),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -648,9 +605,14 @@ class _ChartScreenState extends State<ChartScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      'in ${p.inSign}',
-                      style: TextStyle(color: p.color, fontSize: 10),
+                      'in ${p.sign}',
+                      style: TextStyle(color: pColor, fontSize: 10),
                     ),
+                    if (p.isRetrograde)
+                      Text(
+                        '℞',
+                        style: TextStyle(color: Colors.redAccent, fontSize: 10),
+                      ),
                   ],
                 ),
               ),
@@ -661,7 +623,8 @@ class _ChartScreenState extends State<ChartScreen>
     );
   }
 
-  void _showPlanetDetail(BuildContext context, _Planet planet) {
+  void _showPlanetDetail(BuildContext context, PlanetPosition planet) {
+    final pColor = _planetColors[planet.name] ?? const Color(0xFFB0B8D1);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -670,7 +633,7 @@ class _ChartScreenState extends State<ChartScreen>
         decoration: BoxDecoration(
           color: AppColors.secondary,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          border: Border.all(color: planet.color.withAlpha(77)),
+          border: Border.all(color: pColor.withAlpha(77)),
         ),
         padding: const EdgeInsets.fromLTRB(24, 16, 24, 40),
         child: Column(
@@ -691,14 +654,14 @@ class _ChartScreenState extends State<ChartScreen>
                   width: 56,
                   height: 56,
                   decoration: BoxDecoration(
-                    color: planet.color.withAlpha(25),
+                    color: pColor.withAlpha(25),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: planet.color.withAlpha(100)),
+                    border: Border.all(color: pColor.withAlpha(100)),
                   ),
                   child: Center(
                     child: Text(
                       planet.symbol,
-                      style: TextStyle(fontSize: 28, color: planet.color),
+                      style: TextStyle(fontSize: 28, color: pColor),
                     ),
                   ),
                 ),
@@ -715,13 +678,22 @@ class _ChartScreenState extends State<ChartScreen>
                       ),
                     ),
                     Text(
-                      'in ${planet.inSign}',
+                      'in ${planet.sign} ${planet.degreeDisplay}',
                       style: TextStyle(
-                        color: planet.color,
+                        color: pColor,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    if (planet.isRetrograde)
+                      const Text(
+                        '℞ Retrograde',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                   ],
                 ),
               ],
@@ -733,10 +705,10 @@ class _ChartScreenState extends State<ChartScreen>
               decoration: BoxDecoration(
                 color: AppColors.card,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: planet.color.withAlpha(51)),
+                border: Border.all(color: pColor.withAlpha(51)),
               ),
               child: Text(
-                planet.placement,
+                _placementText(planet.name, planet.sign),
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 15,
@@ -753,19 +725,39 @@ class _ChartScreenState extends State<ChartScreen>
   }
 
   Widget _buildBig3(ZodiacSign sign) {
-    // Moon and Rising are estimated from sun sign — replace when birth time is stored
-    final moonSign =
-        MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
-                  (z) => z.name == widget.userSign,
-                ) +
-                4) %
-            12];
-    final risingSign =
-        MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
-                  (z) => z.name == widget.userSign,
-                ) +
-                8) %
-            12];
+    // Use real Big 3 data from backend if available
+    final big3 = _birthChart?.big3;
+
+    final ZodiacSign moonSign;
+    final ZodiacSign risingSign;
+    final bool isEstimated;
+
+    if (big3 != null) {
+      moonSign = MockData.zodiacSigns.firstWhere(
+        (z) => z.name == big3.moonSign,
+        orElse: () => sign,
+      );
+      risingSign = MockData.zodiacSigns.firstWhere(
+        (z) => z.name == big3.risingSign,
+        orElse: () => sign,
+      );
+      isEstimated = big3.risingIsEstimated;
+    } else {
+      // Fallback: estimate from Sun sign offset
+      moonSign =
+          MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
+                    (z) => z.name == widget.userSign,
+                  ) +
+                  4) %
+              12];
+      risingSign =
+          MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
+                    (z) => z.name == widget.userSign,
+                  ) +
+                  8) %
+              12];
+      isEstimated = true;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -774,16 +766,17 @@ class _ChartScreenState extends State<ChartScreen>
           children: [
             Text('Your Big 3', style: Theme.of(context).textTheme.titleLarge),
             const Spacer(),
-            const Tooltip(
-              message:
-                  'Moon & Rising estimated from Sun sign.\nAdd birth time in Profile for accuracy.',
-              triggerMode: TooltipTriggerMode.tap,
-              child: Icon(
-                Icons.info_outline,
-                color: AppColors.textMuted,
-                size: 18,
+            if (isEstimated)
+              const Tooltip(
+                message:
+                    'Moon & Rising estimated.\nAdd birth time & place for accuracy.',
+                triggerMode: TooltipTriggerMode.tap,
+                child: Icon(
+                  Icons.info_outline,
+                  color: AppColors.textMuted,
+                  size: 18,
+                ),
               ),
-            ),
           ],
         ),
         const SizedBox(height: 14),
@@ -821,13 +814,162 @@ class _ChartScreenState extends State<ChartScreen>
     );
   }
 
-  Widget _buildTransits(List<_Transit> transits) {
+  Widget _buildNakshatra(NakshatraData nakshatra) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppColors.gradientCard,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent.withAlpha(51)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withAlpha(25),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.accent.withAlpha(77)),
+            ),
+            child: const Center(
+              child: Text(
+                '☽',
+                style: TextStyle(fontSize: 22, color: Color(0xFFE0E0E0)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Moon Nakshatra',
+                  style: TextStyle(
+                    color: AppColors.accent,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  '${nakshatra.name} · Pada ${nakshatra.pada}',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Lord: ${nakshatra.lord}',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTransitsSection() {
+    if (_transits.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Today's Transits",
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              'Loading current transits...',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text("Today's Transits", style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 14),
-        ...transits.map((t) => _TransitCard(transit: t)),
+        ..._transits.map((t) {
+          final tColor = _planetColors[t.name] ?? const Color(0xFFB0B8D1);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: tColor.withAlpha(51)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: tColor.withAlpha(25),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: tColor.withAlpha(77)),
+                  ),
+                  child: Center(
+                    child: Text(
+                      t.symbol,
+                      style: TextStyle(fontSize: 22, color: tColor),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.name,
+                        style: TextStyle(
+                          color: tColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'in ${t.sign} ${t.degreeDisplay}',
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      if (t.isRetrograde)
+                        const Text(
+                          '℞ Retrograde',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 11,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
       ],
     );
   }
@@ -1033,78 +1175,6 @@ class _Big3Card extends StatelessWidget {
             meaning,
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textMuted, fontSize: 10),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TransitCard extends StatelessWidget {
-  final _Transit transit;
-
-  const _TransitCard({required this.transit});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: transit.color.withAlpha(51)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: transit.color.withAlpha(25),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: transit.color.withAlpha(77)),
-            ),
-            child: Center(
-              child: Text(
-                transit.symbol,
-                style: TextStyle(fontSize: 22, color: transit.color),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  transit.planet,
-                  style: TextStyle(
-                    color: transit.color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  transit.influence,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  transit.detail,
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
