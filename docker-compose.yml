@@ -12,6 +12,9 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_MODEL=gemini-2.5-flash-lite
       - LOG_LEVEL=DEBUG
+      # Remote content DB on the other laptop
+      - CONTENT_DB_URL=${CONTENT_DB_URL:-}
+      - CONTENT_DB_ENABLED=${CONTENT_DB_ENABLED:-false}
     volumes:
       - ./backend:/app
     restart: unless-stopped

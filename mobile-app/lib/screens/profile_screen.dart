@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../widgets/starry_background.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -100,9 +100,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sign = MockData.zodiacSigns.firstWhere(
+    final sign = zodiacSigns.firstWhere(
       (z) => z.name == _sign,
-      orElse: () => MockData.zodiacSigns.first,
+      orElse: () => zodiacSigns.first,
     );
     final traits = _getTraits(_sign);
 
@@ -864,7 +864,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   isExpanded: true,
                   dropdownColor: AppColors.card,
                   underline: const SizedBox(),
-                  items: MockData.zodiacSigns.map((z) {
+                  items: zodiacSigns.map((z) {
                     return DropdownMenuItem(
                       value: z.name,
                       child: Text(

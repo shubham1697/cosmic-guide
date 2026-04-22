@@ -1,6 +1,12 @@
 # CosmicGuide - Detailed Feature Tracker
 
-> Last updated: March 23, 2026
+> Last updated: April 22, 2026
+
+## 🐛 Bugs / Investigations
+
+- [ ] **Tarot cards not loading** — `ApiService.drawTarotCard()` returns null (backend returns non-200 or times out). Investigate: check if `tarot_cards` DB table is seeded on startup, verify `/api/v1/tarot/draw` responds correctly, check backend logs for errors. Data must come from backend — no mock fallback.
+
+---
 
 ## Status Legend
 

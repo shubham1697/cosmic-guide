@@ -16,59 +16,13 @@ from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
 
 from logger import get_logger
+from data.zodiac_data import ZODIAC_SIGNS, ZODIAC_SYMBOLS
+from data.astro_constants import PLANET_IDS, PLANET_SYMBOLS, NAKSHATRAS, NAKSHATRA_LORDS
 
 logger = get_logger(__name__)
 
 # Use built-in ephemeris (no external data files needed)
 swe.set_ephe_path("")
-
-# ── Constants ────────────────────────────────────────────────────────────────
-
-ZODIAC_SIGNS = [
-    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
-]
-
-ZODIAC_SYMBOLS = [
-    "♈", "♉", "♊", "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓",
-]
-
-PLANET_IDS = {
-    "Sun":     swe.SUN,
-    "Moon":    swe.MOON,
-    "Mercury": swe.MERCURY,
-    "Venus":   swe.VENUS,
-    "Mars":    swe.MARS,
-    "Jupiter": swe.JUPITER,
-    "Saturn":  swe.SATURN,
-    "Uranus":  swe.URANUS,
-    "Neptune": swe.NEPTUNE,
-    "Pluto":   swe.PLUTO,
-}
-
-PLANET_SYMBOLS = {
-    "Sun": "☉", "Moon": "☽", "Mercury": "☿", "Venus": "♀",
-    "Mars": "♂", "Jupiter": "♃", "Saturn": "♄", "Uranus": "♅",
-    "Neptune": "♆", "Pluto": "♇",
-}
-
-# 27 Nakshatras — each spans 13°20' (13.3333°)
-NAKSHATRAS = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
-    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni",
-    "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha",
-    "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana",
-    "Dhanishta", "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada",
-    "Revati",
-]
-
-NAKSHATRA_LORDS = [
-    "Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu",
-    "Jupiter", "Saturn", "Mercury", "Ketu", "Venus",
-    "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn",
-    "Mercury", "Ketu", "Venus", "Sun", "Moon",
-    "Mars", "Rahu", "Jupiter", "Saturn", "Mercury",
-]
 
 # Geocoder (lazy singleton)
 _geocoder: Optional[Nominatim] = None

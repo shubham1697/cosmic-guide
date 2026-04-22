@@ -240,6 +240,8 @@ class BirthChartData {
   final NakshatraData moonNakshatra;
   final List<AspectData> aspects;
   final bool hasAccurateHouses;
+  final double? ascendantLongitude;
+  final double? midheavenLongitude;
 
   const BirthChartData({
     required this.planets,
@@ -247,9 +249,13 @@ class BirthChartData {
     required this.moonNakshatra,
     required this.aspects,
     required this.hasAccurateHouses,
+    this.ascendantLongitude,
+    this.midheavenLongitude,
   });
 
   factory BirthChartData.fromJson(Map<String, dynamic> json) {
+    final ascendant = json['ascendant'];
+    final midheaven = json['midheaven'];
     return BirthChartData(
       planets: (json['planets'] as List? ?? [])
           .map((p) => PlanetPosition.fromJson(p))
@@ -260,6 +266,12 @@ class BirthChartData {
           .map((a) => AspectData.fromJson(a))
           .toList(),
       hasAccurateHouses: json['hasAccurateHouses'] ?? false,
+      ascendantLongitude: ascendant is Map
+          ? (ascendant['longitude'] as num?)?.toDouble()
+          : null,
+      midheavenLongitude: midheaven is Map
+          ? (midheaven['longitude'] as num?)?.toDouble()
+          : null,
     );
   }
 }

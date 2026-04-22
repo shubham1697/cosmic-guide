@@ -87,7 +87,23 @@ def health_check():
         "version": settings.VERSION,
         "log_level": settings.LOG_LEVEL,
         "ai_enabled": ai,
+        "content_db_enabled": settings.CONTENT_DB_ENABLED,
     }
+
+
+# Content status endpoint — check what's pre-populated
+@app.get("/admin/content-status", tags=["Admin"])
+def content_status(target_date: str = None):
+    """Check what content is available in the DB for the given date."""
+    from db.content_db import get_content_session
+    from services.content_db_service import get_content_status
+
+    for_date = date.fromisoformat(target_date) if target_date else date.today()
+    db = get_content_session()
+    try:
+        return get_content_status(db, for_date)
+    finally:
+        db.close()
 
 
 # ── Admin: refresh all daily AI content ──────────────────────────────────────

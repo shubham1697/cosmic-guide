@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
@@ -142,7 +142,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
           const SizedBox(height: 8),
           if (selected != null) ...[
             Text(
-              MockData.zodiacSigns.firstWhere((z) => z.name == selected).symbol,
+              zodiacSigns.firstWhere((z) => z.name == selected).symbol,
               style: const TextStyle(fontSize: 40),
             ),
             const SizedBox(height: 4),
@@ -156,7 +156,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
             dropdownColor: AppColors.card,
             isExpanded: true,
             underline: const SizedBox(),
-            items: MockData.zodiacSigns.map((sign) {
+            items: zodiacSigns.map((sign) {
               return DropdownMenuItem(
                 value: sign.name,
                 child: Text(
@@ -188,9 +188,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    MockData.zodiacSigns
-                        .firstWhere((z) => z.name == _sign1)
-                        .symbol,
+                    zodiacSigns.firstWhere((z) => z.name == _sign1).symbol,
                     style: const TextStyle(fontSize: 36),
                   ),
                   const Padding(
@@ -202,9 +200,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
                     ),
                   ),
                   Text(
-                    MockData.zodiacSigns
-                        .firstWhere((z) => z.name == _sign2)
-                        .symbol,
+                    zodiacSigns.firstWhere((z) => z.name == _sign2).symbol,
                     style: const TextStyle(fontSize: 36),
                   ),
                 ],

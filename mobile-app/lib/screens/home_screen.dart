@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
@@ -29,8 +29,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late HoroscopeData _horoscope;
-  List<AstrologyStory> _stories = MockData.stories;
+  HoroscopeData? _horoscope;
+  List<AstrologyStory> _stories = [];
   TarotCard? _dailyTarotCard;
   bool _dailyTarotReversed = false;
   bool _isLoading = true;
@@ -38,8 +38,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _horoscope =
-        widget.initialHoroscope ?? MockData.getHoroscope(widget.userSign);
+    _horoscope = widget.initialHoroscope;
     _isLoading = widget.initialHoroscope == null;
     _loadData();
     _loadDailyTarot();
@@ -62,27 +61,43 @@ class _HomeScreenState extends State<HomeScreen> {
     final prefs = await SharedPreferences.getInstance();
     final cachedDate = prefs.getString('daily_tarot_date');
 
-    int cardIndex;
-    bool isReversed;
-
     if (cachedDate == today) {
-      // Restore cached card for today
-      cardIndex = prefs.getInt('daily_tarot_index') ?? 0;
-      isReversed = prefs.getBool('daily_tarot_reversed') ?? false;
-    } else {
-      // Pick new card deterministically from today's date + save
-      final now = DateTime.now();
-      final seed = now.year * 10000 + now.month * 100 + now.day;
-      cardIndex = seed % MockData.tarotDeck.length;
-      isReversed = (seed % 10) < 3; // ~30% chance reversed
-      await prefs.setString('daily_tarot_date', today);
-      await prefs.setInt('daily_tarot_index', cardIndex);
-      await prefs.setBool('daily_tarot_reversed', isReversed);
+      // Restore cached card fields from today's prefs
+      final name = prefs.getString('daily_tarot_name');
+      if (name != null && mounted) {
+        setState(() {
+          _dailyTarotCard = TarotCard(
+            name: name,
+            number: prefs.getString('daily_tarot_number') ?? '',
+            meaning: prefs.getString('daily_tarot_meaning') ?? '',
+            interpretation: prefs.getString('daily_tarot_interpretation') ?? '',
+            reversedInterpretation:
+                prefs.getString('daily_tarot_reversed_interpretation') ?? '',
+            isReversed: prefs.getBool('daily_tarot_reversed') ?? false,
+          );
+          _dailyTarotReversed = prefs.getBool('daily_tarot_reversed') ?? false;
+        });
+      }
+      return;
     }
 
-    if (mounted) {
+    // Fetch new card from API and cache all fields
+    final result = await ApiService.drawTarotCard();
+    if (result != null && mounted) {
+      final card = result.card;
+      final isReversed = result.isReversed;
+      await prefs.setString('daily_tarot_date', today);
+      await prefs.setString('daily_tarot_name', card.name);
+      await prefs.setString('daily_tarot_number', card.number);
+      await prefs.setString('daily_tarot_meaning', card.meaning);
+      await prefs.setString('daily_tarot_interpretation', card.interpretation);
+      await prefs.setString(
+        'daily_tarot_reversed_interpretation',
+        card.reversedInterpretation,
+      );
+      await prefs.setBool('daily_tarot_reversed', isReversed);
       setState(() {
-        _dailyTarotCard = MockData.tarotDeck[cardIndex];
+        _dailyTarotCard = card;
         _dailyTarotReversed = isReversed;
       });
     }
@@ -104,7 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ]);
     if (mounted) {
       setState(() {
-        _horoscope = results[0] as HoroscopeData;
+        _horoscope = results[0] as HoroscopeData?;
         _stories = results[1] as List<AstrologyStory>;
         _isLoading = false;
       });
@@ -113,9 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sign = MockData.zodiacSigns.firstWhere(
-      (z) => z.name == widget.userSign,
-    );
+    final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
     final horoscope = _horoscope;
 
     return StarryBackground(
@@ -185,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildDailyCard(BuildContext context, dynamic horoscope) {
+  Widget _buildDailyCard(BuildContext context, HoroscopeData? horoscope) {
     return GestureDetector(
       onTap: widget.onChartTap,
       child: Container(
@@ -227,7 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: AppColors.accent,
                     ),
                   )
-                else
+                else if (horoscope != null)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -249,17 +262,37 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const SizedBox(height: 12),
-            _buildHoroscopePreview(horoscope.general),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                _buildInfoChip(Icons.casino, 'Lucky: ${horoscope.luckyNumber}'),
-                const SizedBox(width: 12),
-                _buildInfoChip(Icons.palette, horoscope.luckyColor),
-                const SizedBox(width: 12),
-                _buildInfoChip(Icons.mood, horoscope.mood),
-              ],
-            ),
+            if (_isLoading)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.accent,
+                  ),
+                ),
+              )
+            else if (horoscope == null)
+              const Text(
+                'Unable to load your reading. Pull down to refresh.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+              )
+            else ...[
+              _buildHoroscopePreview(horoscope.general),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  _buildInfoChip(
+                    Icons.casino,
+                    'Lucky: ${horoscope.luckyNumber}',
+                  ),
+                  const SizedBox(width: 12),
+                  _buildInfoChip(Icons.palette, horoscope.luckyColor),
+                  const SizedBox(width: 12),
+                  _buildInfoChip(Icons.mood, horoscope.mood),
+                ],
+              ),
+            ],
           ],
         ),
       ),

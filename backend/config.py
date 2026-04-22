@@ -20,6 +20,18 @@ class Settings:
 
     CORS_ORIGINS: list = ["*"]
 
+    # Local Ollama instance for story generation
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://192.168.29.88:11434")
+    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "mistral:latest")
+
+    # Remote content database (running on a different machine)
+    # This DB holds pre-generated daily content (horoscopes, fortunes, stories, etc.)
+    CONTENT_DB_URL: str = os.getenv("CONTENT_DB_URL", "")  # e.g. postgresql://user:pass@192.168.29.88:5432/cosmicguide_content
+    CONTENT_DB_ENABLED: bool = os.getenv("CONTENT_DB_ENABLED", "false").lower() in ("true", "1", "yes")
+
+    # Cron schedule for daily content generation (HH:MM in 24h format)
+    DAILY_REFRESH_TIME: str = os.getenv("DAILY_REFRESH_TIME", "00:05")
+
     # Logging — set LOG_LEVEL env var on Render to control verbosity
     # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")

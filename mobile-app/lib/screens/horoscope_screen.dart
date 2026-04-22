@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
@@ -22,7 +22,7 @@ class HoroscopeScreen extends StatefulWidget {
 class _HoroscopeScreenState extends State<HoroscopeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  late HoroscopeData horoscope;
+  HoroscopeData? horoscope;
   bool _isLoading = true;
 
   @override
@@ -33,7 +33,6 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
       horoscope = widget.initialHoroscope!;
       _isLoading = false;
     } else {
-      horoscope = MockData.getHoroscope(widget.userSign);
       _loadHoroscope();
     }
   }
@@ -69,9 +68,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
 
   @override
   Widget build(BuildContext context) {
-    final sign = MockData.zodiacSigns.firstWhere(
-      (z) => z.name == widget.userSign,
-    );
+    final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
 
     return StarryBackground(
       child: Scaffold(
@@ -99,40 +96,59 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
             children: [
               _buildSignHeader(sign),
               const SizedBox(height: 24),
-              _buildScoreRing(),
-              const SizedBox(height: 24),
-              _buildTabBar(),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 200,
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildContent(
-                      horoscope.general,
-                      Icons.star,
-                      AppColors.general,
+              if (_isLoading && horoscope == null)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: CircularProgressIndicator(color: AppColors.accent),
+                  ),
+                )
+              else if (horoscope == null)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Text(
+                      'Reading unavailable. Pull down to refresh.',
+                      style: TextStyle(color: AppColors.textMuted),
                     ),
-                    _buildContent(
-                      horoscope.love,
-                      Icons.favorite,
-                      AppColors.love,
-                    ),
-                    _buildContent(
-                      horoscope.career,
-                      Icons.work,
-                      AppColors.career,
-                    ),
-                    _buildContent(
-                      horoscope.health,
-                      Icons.health_and_safety,
-                      AppColors.health,
-                    ),
-                  ],
+                  ),
+                )
+              else ...[
+                _buildScoreRing(),
+                const SizedBox(height: 24),
+                _buildTabBar(),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 200,
+                  child: TabBarView(
+                    controller: _tabController,
+                    children: [
+                      _buildContent(
+                        horoscope!.general,
+                        Icons.star,
+                        AppColors.general,
+                      ),
+                      _buildContent(
+                        horoscope!.love,
+                        Icons.favorite,
+                        AppColors.love,
+                      ),
+                      _buildContent(
+                        horoscope!.career,
+                        Icons.work,
+                        AppColors.career,
+                      ),
+                      _buildContent(
+                        horoscope!.health,
+                        Icons.health_and_safety,
+                        AppColors.health,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 24),
-              _buildLuckySection(),
+                const SizedBox(height: 24),
+                _buildLuckySection(),
+              ],
             ],
           ),
         ),
@@ -178,7 +194,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
       child: Column(
         children: [
           Text(
-            '${horoscope.overallScore}%',
+            '${horoscope!.overallScore}%',
             style: GoogleFonts.playfairDisplay(
               fontSize: 40,
               fontWeight: FontWeight.bold,
@@ -261,9 +277,9 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildLuckyItem(Icons.casino, 'Number', horoscope.luckyNumber),
-          _buildLuckyItem(Icons.palette, 'Color', horoscope.luckyColor),
-          _buildLuckyItem(Icons.mood, 'Mood', horoscope.mood),
+          _buildLuckyItem(Icons.casino, 'Number', horoscope!.luckyNumber),
+          _buildLuckyItem(Icons.palette, 'Color', horoscope!.luckyColor),
+          _buildLuckyItem(Icons.mood, 'Mood', horoscope!.mood),
         ],
       ),
     );

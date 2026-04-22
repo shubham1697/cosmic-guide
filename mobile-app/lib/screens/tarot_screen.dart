@@ -41,6 +41,7 @@ class _TarotScreenState extends State<TarotScreen>
 
   Future<void> _drawCard() async {
     final result = await ApiService.drawTarotCard();
+    if (result == null) return;
     setState(() {
       _drawnCard = result.card;
       _isRevealed = false;

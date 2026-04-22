@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/zodiac.dart';
-import '../data/mock_data.dart';
 
 class ApiService {
   // Local backend (Docker): use 10.0.2.2 for Android emulator, localhost for iOS/web
@@ -10,8 +9,8 @@ class ApiService {
   // Render free tier can take 15-30s to cold-start; use a generous timeout.
   static const _timeout = Duration(seconds: 20);
 
-  /// Fetch today's horoscope for a sign. Falls back to mock data on failure.
-  static Future<HoroscopeData> getHoroscope(String sign) async {
+  /// Fetch today's horoscope for a sign. Returns null on failure.
+  static Future<HoroscopeData?> getHoroscope(String sign) async {
     try {
       final response = await http
           .get(Uri.parse('$_baseUrl/horoscope/today?zodiac_sign=$sign'))
@@ -32,11 +31,11 @@ class ApiService {
         );
       }
     } catch (_) {}
-    return MockData.getHoroscope(sign);
+    return null;
   }
 
-  /// Draw a random tarot card. Falls back to mock data on failure.
-  static Future<({TarotCard card, bool isReversed})> drawTarotCard() async {
+  /// Draw a random tarot card. Returns null on failure.
+  static Future<({TarotCard card, bool isReversed})?> drawTarotCard() async {
     try {
       final response = await http
           .get(Uri.parse('$_baseUrl/tarot/draw'))
@@ -57,19 +56,11 @@ class ApiService {
         );
       }
     } catch (_) {}
-    // Fallback: use local mock data
-    return _drawLocalTarotCard();
+    return null;
   }
 
-  static ({TarotCard card, bool isReversed}) _drawLocalTarotCard() {
-    final random = DateTime.now().millisecondsSinceEpoch;
-    final card = MockData.tarotDeck[random % MockData.tarotDeck.length];
-    final isReversed = (random % 10) < 3; // ~30% chance
-    return (card: card, isReversed: isReversed);
-  }
-
-  /// Generate a fortune. Falls back to mock data on failure.
-  static Future<String> generateFortune(
+  /// Generate a fortune. Returns null on failure.
+  static Future<String?> generateFortune(
     String zodiacSign,
     String topic,
     String mood,
@@ -91,13 +82,11 @@ class ApiService {
         return data['fortuneText'] as String;
       }
     } catch (_) {}
-    // Fallback: random local fortune
-    final random = DateTime.now().millisecondsSinceEpoch;
-    return MockData.fortunes[random % MockData.fortunes.length];
+    return null;
   }
 
-  /// Check compatibility between two signs. Falls back to mock data on failure.
-  static Future<CompatibilityResult> checkCompatibility(
+  /// Check compatibility between two signs. Returns null on failure.
+  static Future<CompatibilityResult?> checkCompatibility(
     String sign1,
     String sign2,
   ) async {
@@ -122,11 +111,11 @@ class ApiService {
         );
       }
     } catch (_) {}
-    return MockData.getCompatibility(sign1, sign2);
+    return null;
   }
 
-  /// Calculate Kundli matching. Falls back to mock data on failure.
-  static Future<KundliResult> calculateKundli({
+  /// Calculate Kundli matching. Returns null on failure.
+  static Future<KundliResult?> calculateKundli({
     required String name1,
     required String birthDate1,
     String? birthTime1,
@@ -169,10 +158,10 @@ class ApiService {
         );
       }
     } catch (_) {}
-    return MockData.getKundliResult();
+    return null;
   }
 
-  /// Fetch cosmic stories. Falls back to mock data on failure.
+  /// Fetch cosmic stories. Returns empty list on failure.
   static Future<List<AstrologyStory>> getStories() async {
     try {
       final response = await http
@@ -194,7 +183,7 @@ class ApiService {
             .toList();
       }
     } catch (_) {}
-    return MockData.stories;
+    return [];
   }
 
   /// Fetch a full birth chart calculated with Swiss Ephemeris.

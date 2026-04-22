@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
-import '../data/mock_data.dart';
 import '../widgets/starry_background.dart';
 import 'tarot_screen.dart';
 import 'fortune_screen.dart';
@@ -19,7 +18,7 @@ class DiscoverScreen extends StatefulWidget {
 }
 
 class _DiscoverScreenState extends State<DiscoverScreen> {
-  List<AstrologyStory> _stories = MockData.stories;
+  List<AstrologyStory> _stories = [];
   String _selectedCategory = 'All';
 
   @override

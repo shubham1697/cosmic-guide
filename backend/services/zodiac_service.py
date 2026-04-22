@@ -1,16 +1,6 @@
 """Zodiac signs, elements, and calculation utilities."""
 
-ZODIAC_SIGNS = [
-    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
-    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces",
-]
-
-ZODIAC_ELEMENTS = {
-    "Aries": "Fire", "Leo": "Fire", "Sagittarius": "Fire",
-    "Taurus": "Earth", "Virgo": "Earth", "Capricorn": "Earth",
-    "Gemini": "Air", "Libra": "Air", "Aquarius": "Air",
-    "Cancer": "Water", "Scorpio": "Water", "Pisces": "Water",
-}
+from data.zodiac_data import ZODIAC_SIGNS, ZODIAC_ELEMENTS
 
 
 def calculate_zodiac(month: int, day: int) -> str:

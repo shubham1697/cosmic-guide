@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/fortune_options_data.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
@@ -138,7 +138,7 @@ class _FortuneScreenState extends State<FortuneScreen>
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: MockData.fortuneTopics.map((topic) {
+          children: fortuneTopics.map((topic) {
             final isSelected = _selectedTopic == topic;
             return GestureDetector(
               onTap: () => setState(() => _selectedTopic = topic),
@@ -190,7 +190,7 @@ class _FortuneScreenState extends State<FortuneScreen>
         Wrap(
           spacing: 10,
           runSpacing: 10,
-          children: MockData.moods.map((mood) {
+          children: moods.map((mood) {
             final isSelected = _selectedMood == mood;
             return GestureDetector(
               onTap: () => setState(() => _selectedMood = mood),

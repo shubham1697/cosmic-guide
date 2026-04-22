@@ -1,0 +1,88 @@
+# ──────────────────────────────────────────────────────────────
+# CosmicGuide Content Database + Daily Populator
+#
+# Deploy this on the laptop that keeps the database running.
+# The API backend on your main machine connects to this DB.
+#
+# Usage:
+#   1. Copy .env.content-db to .env and fill in your GEMINI_API_KEY
+#   2. docker compose -f docker-compose.content-db.yml up -d
+#   3. First run: docker compose -f docker-compose.content-db.yml exec populator python populate_daily.py --seed-oneshot
+#
+# Architecture:
+#   ┌─────────────┐     ┌──────────────────┐     ┌────────────┐
+#   │  Flutter App │────▶│  Backend API      │────▶│ Content DB │
+#   │  (phone)     │     │  (your Mac)       │     │ (this      │
+#   └─────────────┘     └──────────────────┘     │  laptop)   │
+#                                                 └────────────┘
+#                        ┌──────────────────┐           ▲
+#                        │  Populator (cron) │───────────┘
+#                        │  (this laptop)    │──── Gemini API
+#                        └──────────────────┘
+# ──────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL database ─────────────────────────────────────
+  content-db:
+    image: postgres:16-alpine
+    container_name: cosmicguide-content-db
+    restart: unless-stopped
+    ports:
+      - "${CONTENT_DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cosmicguide_content}
+      POSTGRES_USER: ${POSTGRES_USER:-cosmicguide}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cosmicguide_secret}
+    volumes:
+      - content-db-data:/var/lib/postgresql/data
+      - ./content-db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cosmicguide}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Daily content populator (cron) ──────────────────────────
+  populator:
+    build:
+      context: .
+      dockerfile: content-db/Dockerfile.populator
+    container_name: cosmicguide-populator
+    restart: unless-stopped
+    depends_on:
+      content-db:
+        condition: service_healthy
+    environment:
+      # Points to the DB container via Docker network
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cosmicguide}:${POSTGRES_PASSWORD:-cosmicguide_secret}@content-db:5432/${POSTGRES_DB:-cosmicguide_content}
+      CONTENT_DB_URL: postgresql://${POSTGRES_USER:-cosmicguide}:${POSTGRES_PASSWORD:-cosmicguide_secret}@content-db:5432/${POSTGRES_DB:-cosmicguide_content}
+      CONTENT_DB_ENABLED: "true"
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      AI_MODEL: ${AI_MODEL:-gemini-2.5-flash-lite}
+      DAILY_REFRESH_TIME: ${DAILY_REFRESH_TIME:-00:05}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Ollama (if story generation needs it)
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral:latest}
+    # Run the scheduler daemon — it auto-populates on startup + at DAILY_REFRESH_TIME
+    command: python cron_runner.py
+
+  # ── pgAdmin (optional, for DB inspection) ───────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: cosmicguide-pgadmin
+    restart: unless-stopped
+    profiles: ["admin"]    # only starts with: docker compose --profile admin up
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@cosmicguide.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    depends_on:
+      content-db:
+        condition: service_healthy
+
+volumes:
+  content-db-data:
+    driver: local

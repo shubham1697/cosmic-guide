@@ -286,7 +286,7 @@ Rules:
 #  BATCH FORTUNE POOL PROMPT  (6 signs × 5 topics × 3 fortunes in one call)
 # ────────────────────────────────────────────────────────────────────────────
 
-FORTUNE_TOPICS = ["Love", "Career", "Health", "Wealth", "Spiritual"]
+from data.fortune_options import FORTUNE_TOPICS
 
 
 def batch_fortune_pool_prompt(signs: list, for_date: date) -> str:

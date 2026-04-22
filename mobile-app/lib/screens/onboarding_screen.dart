@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../widgets/starry_background.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -249,7 +249,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Widget _buildBirthPage() {
     final sign = _selectedSign != null
-        ? MockData.zodiacSigns.firstWhere((z) => z.name == _selectedSign)
+        ? zodiacSigns.firstWhere((z) => z.name == _selectedSign)
         : null;
 
     return Padding(

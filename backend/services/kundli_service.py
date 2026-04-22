@@ -8,74 +8,13 @@ all eight Koota scores according to traditional Vedic rules.
 
 from logger import get_logger
 from services.birth_chart_service import calculate_birth_chart
+from data.astro_constants import NAKSHATRAS
+from data.kundli_tables import (
+    VARNA, VASHYA_SIGN, YONI_ANIMAL, YONI_COMPAT,
+    GANA, NADI, RASHI_LORD, GRAHA_FRIENDSHIP,
+)
 
 logger = get_logger(__name__)
-
-# ── Nakshatra lookup tables ──────────────────────────────────────────────────
-
-NAKSHATRAS = [
-    "Ashwini", "Bharani", "Krittika", "Rohini", "Mrigashira", "Ardra",
-    "Punarvasu", "Pushya", "Ashlesha", "Magha", "Purva Phalguni",
-    "Uttara Phalguni", "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha",
-    "Jyeshtha", "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana",
-    "Dhanishta", "Shatabhisha", "Purva Bhadrapada", "Uttara Bhadrapada",
-    "Revati",
-]
-
-# Varna (caste) of each Nakshatra: 0=Brahmin, 1=Kshatriya, 2=Vaishya, 3=Shudra
-VARNA = [
-    1, 3, 2, 3, 0, 2, 0, 1, 3, 3, 0, 1, 2, 1, 0, 0, 3, 1, 2, 0, 1, 3, 2, 2, 0, 1, 3
-]
-
-# Vashya groups: 0=Chatushpada, 1=Manava, 2=Jalachara, 3=Vanachara, 4=Keeta
-VASHYA_SIGN = [0, 0, 1, 2, 0, 1, 1, 4, 0, 0, 1, 1]  # by rashi (0-11)
-
-# Tara: computed from Nakshatra distance
-# Yoni (animal pairs): 14 animals
-YONI_ANIMAL = [
-    0, 1, 2, 3, 3, 4, 5, 6, 5, 7, 8, 9, 10, 11, 10, 12, 8, 7, 4, 13, 13, 13, 9, 0, 6, 9, 1
-]
-YONI_COMPAT = {
-    (i, i): 4 for i in range(14)
-}
-
-# Gana: 0=Deva, 1=Manushya, 2=Rakshasa
-GANA = [
-    0, 1, 2, 0, 0, 1, 0, 0, 2, 2, 1, 1, 0, 2, 0, 2, 0, 2, 2, 1, 1, 0, 2, 2, 1, 1, 0
-]
-
-# Nadi: 0=Aadi, 1=Madhya, 2=Antya
-NADI = [
-    0, 1, 2, 2, 1, 0, 0, 1, 2, 0, 1, 2, 2, 1, 0, 0, 1, 2, 0, 1, 2, 2, 1, 0, 0, 1, 2
-]
-
-# Graha Maitri — planetary friendship (simplified lord-of-rashi approach)
-RASHI_LORD = [4, 6, 3, 1, 0, 3, 6, 4, 5, 7, 7, 5]  # 0=Sun..7=Saturn  (rashi 0-11)
-# Friendship scores: 5=best friends, 4=friends, 3=neutral, 2=enemies, 1=bitter enemies
-GRAHA_FRIENDSHIP = {}
-
-def _init_graha_friendship():
-    """Initialise the planet friendship matrix (0-7)."""
-    # Simplified Vedic planetary friendship table
-    # rows/cols: 0=Sun 1=Moon 2=Mars? Actually: 0=Sun,1=Moon,2=Rahu,3=Mercury,4=Mars,5=Jupiter,6=Venus,7=Saturn
-    # Use a simpler mapping: every lord pair gets a score
-    friends = {
-        (0,1):5,(0,4):5,(0,5):5,
-        (1,0):5,(1,3):4,
-        (3,0):5,(3,6):5,
-        (4,0):5,(4,1):5,(4,5):5,
-        (5,0):5,(5,1):5,(5,4):5,
-        (6,3):5,(6,7):5,
-        (7,3):5,(7,6):5,
-    }
-    for i in range(8):
-        GRAHA_FRIENDSHIP[(i,i)] = 5
-    for (a,b), v in friends.items():
-        GRAHA_FRIENDSHIP[(a,b)] = v
-        if (b,a) not in GRAHA_FRIENDSHIP:
-            GRAHA_FRIENDSHIP[(b,a)] = v
-
-_init_graha_friendship()
 
 
 def _nak_index_from_moon(moon_lon: float) -> int:

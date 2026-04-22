@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
-import '../data/mock_data.dart';
+import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
@@ -61,12 +61,16 @@ class _ChartPainter extends CustomPainter {
   final double animValue;
   final int? highlightedPlanetIndex;
   final List<PlanetPosition> planets;
+  final double? ascendantLongitude; // AC
+  final double? midheavenLongitude; // MC
 
   const _ChartPainter({
     required this.sunSign,
     required this.animValue,
     this.highlightedPlanetIndex,
     required this.planets,
+    this.ascendantLongitude,
+    this.midheavenLongitude,
   });
 
   // ─── Chart painter paint method ──────────────────────────────────────────────
@@ -77,13 +81,25 @@ class _ChartPainter extends CustomPainter {
     final cy = size.height / 2;
     final outerR = size.width * 0.46;
     final zodiacR = outerR * 0.84; // ring where zodiac glyphs sit
-    final planetR = outerR * 0.64; // ring where planet symbols sit
     final innerR = outerR * 0.56; // inner boundary of planet ring
     final coreR = outerR * 0.38; // core circle
+    // Planet radial lanes: outer-first; overlapping planets stack inward
+    final lane0R = outerR * 0.77; // primary — near zodiac ring
+    final lane1R = outerR * 0.68; // secondary
+    final lane2R = outerR * 0.59; // tertiary
 
-    final sunIdx = MockData.zodiacSigns.indexWhere((z) => z.name == sunSign);
-    // rotationOffset aligns the sun sign to the Ascendant (left side, 180°)
-    final rotationOffset = -(sunIdx * 30).toDouble() + 180;
+    final sunIdx = zodiacSigns.indexWhere((z) => z.name == sunSign);
+    final ascLon = ascendantLongitude ?? (sunIdx * 30.0);
+
+    // rotationOffset: maps ecliptic longitude → screen angle (CCW, AC at left)
+    // Formula: screenAngle = rotationOffset - eclipticLon - 90
+    // We want AC (eclipticLon = ascLon) at screen 180° (left):
+    //   rotationOffset - ascLon - 90 = 180 → rotationOffset = ascLon + 270
+    final rotationOffset = ascLon + 270;
+
+    // Helper to convert ecliptic longitude to screen angle in radians
+    double toScreen(double eclipticLon) =>
+        (rotationOffset - eclipticLon - 90) * math.pi / 180;
 
     // ── Background circles ──────────────────────────────────────────────────
     canvas.drawCircle(
@@ -110,19 +126,35 @@ class _ChartPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy), innerR, ringStroke);
     canvas.drawCircle(Offset(cx, cy), coreR, ringStroke);
 
-    // ── House dividers (12 spokes from innerR to outerR) ────────────────────
-    final spokePaint = Paint()
+    // ── Zodiac sign spokes (outer band: zodiacR → outerR) ──────────────────
+    final signSpokePaint = Paint()
       ..color = const Color(0xFF7C4DFF).withAlpha(55)
       ..strokeWidth = 1
       ..style = PaintingStyle.stroke;
 
     for (int i = 0; i < 12; i++) {
-      final angleDeg = rotationOffset + i * 30 - 90;
-      final angle = angleDeg * math.pi / 180;
+      final angle = toScreen(i * 30.0);
+      canvas.drawLine(
+        Offset(cx + zodiacR * math.cos(angle), cy + zodiacR * math.sin(angle)),
+        Offset(cx + outerR * math.cos(angle), cy + outerR * math.sin(angle)),
+        signSpokePaint,
+      );
+    }
+
+    // ── House spokes (inner band: coreR → innerR) ──────────────────────────
+    final houseSpokePaint = Paint()
+      ..color = const Color(0xFF7C4DFF).withAlpha(40)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+
+    for (int j = 0; j < 12; j++) {
+      // Equal houses: each house cusp at ascLon + j * 30
+      final houseCusp = ascLon + j * 30.0;
+      final angle = toScreen(houseCusp);
       canvas.drawLine(
         Offset(cx + coreR * math.cos(angle), cy + coreR * math.sin(angle)),
-        Offset(cx + outerR * math.cos(angle), cy + outerR * math.sin(angle)),
-        spokePaint,
+        Offset(cx + innerR * math.cos(angle), cy + innerR * math.sin(angle)),
+        houseSpokePaint,
       );
     }
 
@@ -157,13 +189,12 @@ class _ChartPainter extends CustomPainter {
     ];
 
     for (int i = 0; i < 12; i++) {
-      final angleDeg = rotationOffset + i * 30 + 15 - 90;
-      final angle = angleDeg * math.pi / 180;
+      // Midpoint of sign i: i*30 + 15
+      final angle = toScreen(i * 30.0 + 15);
       final r = (zodiacR + outerR) / 2;
       final x = cx + r * math.cos(angle);
       final y = cy + r * math.sin(angle);
 
-      // Highlight the sun's sign segment
       final isSunSign = zodiacNames[i] == sunSign;
 
       final tp = TextPainter(
@@ -186,7 +217,7 @@ class _ChartPainter extends CustomPainter {
     canvas.drawArc(
       Rect.fromCircle(center: Offset(cx, cy), radius: (zodiacR + outerR) / 2),
       -math.pi / 2,
-      2 * math.pi * animValue,
+      -2 * math.pi * animValue,
       false,
       Paint()
         ..color = const Color(0xFFFFD700).withAlpha(130)
@@ -195,47 +226,189 @@ class _ChartPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    // ── House numbers (1–12) in inner ring ──────────────────────────────────
-    for (int i = 0; i < 12; i++) {
-      final angleDeg = rotationOffset + i * 30 + 15 - 90;
-      final angle = angleDeg * math.pi / 180;
+    // ── House numbers (1–12) in inner ring — anchored to Ascendant ─────────
+    for (int j = 0; j < 12; j++) {
+      // Midpoint of house j: ascLon + j*30 + 15
+      final houseMid = ascLon + j * 30.0 + 15;
+      final angle = toScreen(houseMid);
       final r = (coreR + innerR) / 2;
       final x = cx + r * math.cos(angle);
       final y = cy + r * math.sin(angle);
 
+      // Subtle background circle behind number
+      canvas.drawCircle(
+        Offset(x, y),
+        8,
+        Paint()
+          ..color = const Color(0xFF1A2240).withAlpha(200)
+          ..style = PaintingStyle.fill,
+      );
+
       final tp = TextPainter(
         text: TextSpan(
-          text: '${i + 1}',
-          style: const TextStyle(fontSize: 9, color: Color(0xFF6B7394)),
+          text: '${j + 1}',
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            color: (j == 0 || j == 3 || j == 6 || j == 9)
+                ? const Color(0xFFB0B8D1) // angular houses brighter
+                : const Color(0xFF6B7394),
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
     }
 
-    // ── Planet symbols on planet ring ───────────────────────────────────────
+    // ── AC / DC axis (Ascendant–Descendant) ─────────────────────────────────
+    if (ascendantLongitude != null) {
+      final acAngle = toScreen(ascendantLongitude!);
+      final dcAngle = acAngle + math.pi;
+
+      final axisPaint = Paint()
+        ..color = const Color(0xFFFF5252).withAlpha((200 * animValue).toInt())
+        ..strokeWidth = 1.8
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(
+        Offset(
+          cx + outerR * math.cos(acAngle),
+          cy + outerR * math.sin(acAngle),
+        ),
+        Offset(
+          cx + outerR * math.cos(dcAngle),
+          cy + outerR * math.sin(dcAngle),
+        ),
+        axisPaint,
+      );
+
+      final acLabelR = outerR + 10;
+      _drawAxisLabel(
+        canvas,
+        cx,
+        cy,
+        acAngle,
+        acLabelR,
+        'AC',
+        const Color(0xFFFF5252),
+        animValue,
+      );
+      _drawAxisLabel(
+        canvas,
+        cx,
+        cy,
+        dcAngle,
+        acLabelR,
+        'DC',
+        const Color(0xFFFF5252).withAlpha(150),
+        animValue,
+      );
+
+      // AC arrow tip
+      final acTipX = cx + (outerR + 2) * math.cos(acAngle);
+      final acTipY = cy + (outerR + 2) * math.sin(acAngle);
+      canvas.drawCircle(
+        Offset(acTipX, acTipY),
+        3,
+        Paint()
+          ..color = const Color(0xFFFF5252).withAlpha((220 * animValue).toInt())
+          ..style = PaintingStyle.fill,
+      );
+    }
+
+    // ── MC / IC axis (Midheaven–Imum Coeli) ─────────────────────────────────
+    if (midheavenLongitude != null) {
+      final mcAngle = toScreen(midheavenLongitude!);
+      final icAngle = mcAngle + math.pi;
+
+      final axisPaint = Paint()
+        ..color = const Color(0xFF448AFF).withAlpha((180 * animValue).toInt())
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke;
+
+      canvas.drawLine(
+        Offset(
+          cx + outerR * math.cos(mcAngle),
+          cy + outerR * math.sin(mcAngle),
+        ),
+        Offset(
+          cx + outerR * math.cos(icAngle),
+          cy + outerR * math.sin(icAngle),
+        ),
+        axisPaint,
+      );
+
+      final mcLabelR = outerR + 10;
+      _drawAxisLabel(
+        canvas,
+        cx,
+        cy,
+        mcAngle,
+        mcLabelR,
+        'MC',
+        const Color(0xFF448AFF),
+        animValue,
+      );
+      _drawAxisLabel(
+        canvas,
+        cx,
+        cy,
+        icAngle,
+        mcLabelR,
+        'IC',
+        const Color(0xFF448AFF).withAlpha(150),
+        animValue,
+      );
+    }
+
+    // ── Planet symbols — outer-first, stack inward on overlap ──────────────
+    // Helpers
+    double norm(double a) {
+      a = a % (2 * math.pi);
+      return a < 0 ? a + 2 * math.pi : a;
+    }
+
+    double angDist(double a, double b) {
+      final d = (a - b).abs() % (2 * math.pi);
+      return d > math.pi ? 2 * math.pi - d : d;
+    }
+
+    const minAngGap = 14.0 * math.pi / 180; // ~14° collision threshold
+    final lanes = [lane0R, lane1R, lane2R];
+    final laneAngles = [<double>[], <double>[], <double>[]];
+
+    final screenAngles = [for (final p in planets) norm(toScreen(p.longitude))];
+    final radii = List<double>.filled(planets.length, lane0R);
+
+    // Assign each planet to the outermost lane with no angular conflict
+    for (int idx = 0; idx < planets.length; idx++) {
+      final a = screenAngles[idx];
+      bool placed = false;
+      for (int lane = 0; lane < lanes.length; lane++) {
+        final conflict = laneAngles[lane].any((b) => angDist(a, b) < minAngGap);
+        if (!conflict) {
+          radii[idx] = lanes[lane];
+          laneAngles[lane].add(a);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) radii[idx] = lane2R; // fallback: innermost
+    }
+
     for (int idx = 0; idx < planets.length; idx++) {
       final planet = planets[idx];
       final pColor = _planetColors[planet.name] ?? const Color(0xFFB0B8D1);
-      // Map longitude (0–359) to wheel angle
-      final angleDeg = rotationOffset + planet.longitude - 90;
-      final angle = angleDeg * math.pi / 180;
+      final angle = screenAngles[idx];
+      final r = radii[idx];
 
       final isHighlighted = highlightedPlanetIndex == idx;
       final alpha = (255 * animValue).clamp(0, 255).toInt();
 
-      // Leader line from innerR to planet track
-      final lineStart = Offset(
-        cx + innerR * math.cos(angle),
-        cy + innerR * math.sin(angle),
-      );
-      final lineEnd = Offset(
-        cx + (planetR + 2) * math.cos(angle),
-        cy + (planetR + 2) * math.sin(angle),
-      );
+      // Tick line from innerR to just behind glyph
       canvas.drawLine(
-        lineStart,
-        lineEnd,
+        Offset(cx + innerR * math.cos(angle), cy + innerR * math.sin(angle)),
+        Offset(cx + (r - 6) * math.cos(angle), cy + (r - 6) * math.sin(angle)),
         Paint()
           ..color = pColor.withAlpha(
             (isHighlighted ? 200 : 60) * animValue ~/ 1,
@@ -246,10 +419,7 @@ class _ChartPainter extends CustomPainter {
       // Glow behind planet symbol
       if (isHighlighted || animValue > 0.6) {
         canvas.drawCircle(
-          Offset(
-            cx + planetR * math.cos(angle),
-            cy + planetR * math.sin(angle),
-          ),
+          Offset(cx + r * math.cos(angle), cy + r * math.sin(angle)),
           isHighlighted ? 14 : 10,
           Paint()
             ..color = pColor.withAlpha(isHighlighted ? 80 : 35)
@@ -269,8 +439,8 @@ class _ChartPainter extends CustomPainter {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      final px = cx + planetR * math.cos(angle);
-      final py = cy + planetR * math.sin(angle);
+      final px = cx + r * math.cos(angle);
+      final py = cy + r * math.sin(angle);
       tp.paint(canvas, Offset(px - tp.width / 2, py - tp.height / 2));
     }
 
@@ -288,12 +458,53 @@ class _ChartPainter extends CustomPainter {
     );
   }
 
+  void _drawAxisLabel(
+    Canvas canvas,
+    double cx,
+    double cy,
+    double angle,
+    double radius,
+    String label,
+    Color color,
+    double anim,
+  ) {
+    final x = cx + radius * math.cos(angle);
+    final y = cy + radius * math.sin(angle);
+
+    // Background pill
+    final bgPaint = Paint()
+      ..color = const Color(0xFF12192E).withAlpha((230 * anim).toInt())
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(center: Offset(x, y), width: 22, height: 14),
+        const Radius.circular(4),
+      ),
+      bgPaint,
+    );
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.bold,
+          color: color.withAlpha((255 * anim).toInt()),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    tp.paint(canvas, Offset(x - tp.width / 2, y - tp.height / 2));
+  }
+
   @override
   bool shouldRepaint(_ChartPainter old) =>
       old.animValue != animValue ||
       old.sunSign != sunSign ||
       old.highlightedPlanetIndex != highlightedPlanetIndex ||
-      old.planets != planets;
+      old.planets != planets ||
+      old.ascendantLongitude != ascendantLongitude ||
+      old.midheavenLongitude != midheavenLongitude;
 }
 
 // ─── Screen ───────────────────────────────────────────────────────────────────
@@ -323,7 +534,7 @@ class _ChartScreenState extends State<ChartScreen>
   late AnimationController _chartAnim;
   late Animation<double> _chartDraw;
   late TabController _tabController;
-  late HoroscopeData _horoscope;
+  HoroscopeData? _horoscope;
   bool _isLoading = true;
   int? _highlightedPlanet;
 
@@ -346,7 +557,6 @@ class _ChartScreenState extends State<ChartScreen>
       _isLoading = false;
       _chartAnim.forward();
     } else {
-      _horoscope = MockData.getHoroscope(widget.userSign);
       _loadHoroscope();
     }
     _loadBirthChart();
@@ -376,10 +586,10 @@ class _ChartScreenState extends State<ChartScreen>
     final data = await ApiService.getHoroscope(widget.userSign);
     if (mounted) {
       setState(() {
-        _horoscope = data;
+        if (data != null) _horoscope = data;
         _isLoading = false;
       });
-      _chartAnim.forward(from: 0);
+      if (data != null) _chartAnim.forward(from: 0);
     }
   }
 
@@ -412,9 +622,7 @@ class _ChartScreenState extends State<ChartScreen>
 
   @override
   Widget build(BuildContext context) {
-    final sign = MockData.zodiacSigns.firstWhere(
-      (z) => z.name == widget.userSign,
-    );
+    final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
 
     // Use real planet data if available, otherwise empty
     final planets = _birthChart?.planets ?? [];
@@ -512,6 +720,8 @@ class _ChartScreenState extends State<ChartScreen>
               animValue: _chartDraw.value,
               highlightedPlanetIndex: _highlightedPlanet,
               planets: planets,
+              ascendantLongitude: _birthChart?.ascendantLongitude,
+              midheavenLongitude: _birthChart?.midheavenLongitude,
             ),
           ),
         ),
@@ -733,25 +943,25 @@ class _ChartScreenState extends State<ChartScreen>
     final bool isEstimated;
 
     if (big3 != null) {
-      moonSign = MockData.zodiacSigns.firstWhere(
+      moonSign = zodiacSigns.firstWhere(
         (z) => z.name == big3.moonSign,
         orElse: () => sign,
       );
-      risingSign = MockData.zodiacSigns.firstWhere(
+      risingSign = zodiacSigns.firstWhere(
         (z) => z.name == big3.risingSign,
         orElse: () => sign,
       );
       isEstimated = big3.risingIsEstimated;
     } else {
-      // Fallback: estimate from Sun sign offset
+      // Estimate from Sun sign offset when no birth chart is available
       moonSign =
-          MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
+          zodiacSigns[(zodiacSigns.indexWhere(
                     (z) => z.name == widget.userSign,
                   ) +
                   4) %
               12];
       risingSign =
-          MockData.zodiacSigns[(MockData.zodiacSigns.indexWhere(
+          zodiacSigns[(zodiacSigns.indexWhere(
                     (z) => z.name == widget.userSign,
                   ) +
                   8) %
@@ -975,6 +1185,20 @@ class _ChartScreenState extends State<ChartScreen>
   }
 
   Widget _buildHoroscopeSection() {
+    final horoscope = _horoscope;
+    if (horoscope == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: _isLoading
+              ? const CircularProgressIndicator(color: AppColors.accent)
+              : const Text(
+                  'Reading unavailable. Pull down to refresh.',
+                  style: TextStyle(color: AppColors.textMuted),
+                ),
+        ),
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -992,7 +1216,7 @@ class _ChartScreenState extends State<ChartScreen>
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                '${_horoscope.overallScore}%',
+                '${horoscope.overallScore}%',
                 style: const TextStyle(
                   color: AppColors.primary,
                   fontWeight: FontWeight.bold,
@@ -1037,11 +1261,11 @@ class _ChartScreenState extends State<ChartScreen>
           child: TabBarView(
             controller: _tabController,
             children: [
-              _readingCard(_horoscope.general, Icons.star, AppColors.general),
-              _readingCard(_horoscope.love, Icons.favorite, AppColors.love),
-              _readingCard(_horoscope.career, Icons.work, AppColors.career),
+              _readingCard(horoscope.general, Icons.star, AppColors.general),
+              _readingCard(horoscope.love, Icons.favorite, AppColors.love),
+              _readingCard(horoscope.career, Icons.work, AppColors.career),
               _readingCard(
-                _horoscope.health,
+                horoscope.health,
                 Icons.health_and_safety,
                 AppColors.health,
               ),
@@ -1049,7 +1273,7 @@ class _ChartScreenState extends State<ChartScreen>
           ),
         ),
         const SizedBox(height: 14),
-        _buildLuckyRow(),
+        _buildLuckyRow(horoscope),
       ],
     );
   }
@@ -1083,7 +1307,7 @@ class _ChartScreenState extends State<ChartScreen>
     );
   }
 
-  Widget _buildLuckyRow() {
+  Widget _buildLuckyRow(HoroscopeData horoscope) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1094,9 +1318,9 @@ class _ChartScreenState extends State<ChartScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _luckyItem(Icons.casino, 'Number', _horoscope.luckyNumber),
-          _luckyItem(Icons.palette, 'Color', _horoscope.luckyColor),
-          _luckyItem(Icons.mood, 'Mood', _horoscope.mood),
+          _luckyItem(Icons.casino, 'Number', horoscope.luckyNumber),
+          _luckyItem(Icons.palette, 'Color', horoscope.luckyColor),
+          _luckyItem(Icons.mood, 'Mood', horoscope.mood),
         ],
       ),
     );
