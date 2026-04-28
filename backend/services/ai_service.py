@@ -16,6 +16,8 @@ import time
 from datetime import date
 from typing import Optional
 
+import requests
+
 from config import settings
 from logger import get_logger
 from services.ai_prompts import (
@@ -57,6 +59,76 @@ def _get_client():
         return None
 
 
+def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
+                    max_tokens: int = 2000) -> Optional[str]:
+    """Call the local Ollama instance and return the raw text response."""
+    from logging_utils import log_external_api_call
+    
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    model = settings.OLLAMA_MODEL
+    endpoint = f"{base_url}/api/generate"
+    prompt_preview = user_prompt[:120].replace("\n", " ")
+    
+    logger.debug(
+        "_call_ai_ollama  model=%s  max_tokens=%d  json=%s  prompt_preview='%s…'",
+        model, max_tokens, expect_json, prompt_preview,
+    )
+    
+    payload = {
+        "model": model,
+        "system": SYSTEM_PROMPT[:100] + "…",  # Truncate for logging
+        "prompt": prompt_preview,
+        "stream": True,
+        "options": {"num_predict": min(max_tokens, settings.OLLAMA_MAX_TOKENS), "temperature": 0.85},
+    }
+    if expect_json:
+        payload["format"] = "json"
+
+    t0 = time.perf_counter()
+    try:
+        resp = requests.post(
+            endpoint,
+            json=payload,
+            timeout=settings.OLLAMA_TIMEOUT,
+            stream=True,
+        )
+        resp.raise_for_status()
+        parts = []
+        for raw_line in resp.iter_lines():
+            if not raw_line:
+                continue
+            chunk = json.loads(raw_line)
+            parts.append(chunk.get("response", ""))
+            if chunk.get("done"):
+                break
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        text = "".join(parts).strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        
+        log_external_api_call(
+            service_name="Ollama",
+            endpoint="/api/generate",
+            method="POST",
+            request_data={"model": model, "format": "json" if expect_json else "text"},
+            response_text=text,
+            elapsed_ms=elapsed_ms,
+            status_code=resp.status_code,
+        )
+        return text
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log_external_api_call(
+            service_name="Ollama",
+            endpoint="/api/generate",
+            method="POST",
+            request_data=payload,
+            elapsed_ms=elapsed_ms,
+            error=exc,
+        )
+        return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Core completion helper
 # ─────────────────────────────────────────────────────────────────────────────
@@ -64,16 +136,19 @@ def _get_client():
 def _call_ai(user_prompt: str, expect_json: bool = True,
              model: str = None, max_tokens: int = 2000) -> Optional[str]:
     """
-    Send a Gemini generation request and return the raw text response.
+    Send a generation request — Gemini if key is set, Ollama otherwise.
 
     Returns None on any error so callers can fall back gracefully.
     """
-    from google import genai  # noqa: PLC0415
-    from google.genai import types  # noqa: PLC0415
-
+    from logging_utils import log_external_api_call
+    
     client = _get_client()
     if client is None:
-        return None
+        # Fall back to local Ollama
+        return _call_ai_ollama(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+
+    from google import genai  # noqa: PLC0415
+    from google.genai import types  # noqa: PLC0415
 
     effective_model = model or settings.AI_MODEL
     prompt_preview = user_prompt[:120].replace("\n", " ")
@@ -101,14 +176,26 @@ def _call_ai(user_prompt: str, expect_json: bool = True,
         # Strip any accidental markdown code fences Gemini may add
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
-        logger.debug(
-            "_call_ai  OK  %.0fms  response_len=%d",
-            elapsed_ms, len(text),
+        
+        log_external_api_call(
+            service_name="Gemini",
+            endpoint="models.generateContent",
+            method="POST",
+            request_data={"model": effective_model, "prompt_preview": prompt_preview},
+            response_text=text,
+            elapsed_ms=elapsed_ms,
         )
         return text
     except Exception as exc:
         elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.error("Gemini API error after %.0fms: %s", elapsed_ms, exc)
+        log_external_api_call(
+            service_name="Gemini",
+            endpoint="models.generateContent",
+            method="POST",
+            request_data={"model": effective_model},
+            elapsed_ms=elapsed_ms,
+            error=exc,
+        )
         return None
 
 
@@ -516,5 +603,15 @@ def generate_batch_tarot_interpretations(cards: list) -> Optional[list]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def ai_available() -> bool:
-    """Returns True if GEMINI_API_KEY is configured and the client initialises."""
-    return _get_client() is not None
+    """Returns True if Gemini key is set, or if the local Ollama instance is reachable."""
+    if _get_client() is not None:
+        return True
+    # Check Ollama
+    try:
+        resp = requests.get(
+            f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags",
+            timeout=5,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False

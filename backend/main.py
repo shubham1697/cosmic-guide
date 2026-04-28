@@ -48,7 +48,7 @@ async def log_requests(request: Request, call_next):
     query = str(request.url.query)
 
     logger.info("→ %s %s%s", method, path, f"?{query}" if query else "")
-    logger.debug("  headers: %s", dict(request.headers))
+    logger.debug("  client=%s", request.client.host if request.client else "unknown")
 
     response = await call_next(request)
 
@@ -66,8 +66,8 @@ async def log_requests(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(
-        "Unhandled error on %s %s: %s",
-        request.method, request.url.path, exc,
+        "⚠️  Unhandled error on %s %s: %s | exc_type=%s",
+        request.method, request.url.path, exc, type(exc).__name__,
         exc_info=True,
     )
     return JSONResponse(
@@ -87,7 +87,6 @@ def health_check():
         "version": settings.VERSION,
         "log_level": settings.LOG_LEVEL,
         "ai_enabled": ai,
-        "content_db_enabled": settings.CONTENT_DB_ENABLED,
     }
 
 
@@ -95,13 +94,40 @@ def health_check():
 @app.get("/admin/content-status", tags=["Admin"])
 def content_status(target_date: str = None):
     """Check what content is available in the DB for the given date."""
-    from db.content_db import get_content_session
-    from services.content_db_service import get_content_status
+    from db.database import SessionLocal
+    from db.models import Horoscope, FortunePool, Story, Compatibility, TarotCard
 
     for_date = date.fromisoformat(target_date) if target_date else date.today()
-    db = get_content_session()
+    date_str = for_date.isoformat()
+    db = SessionLocal()
     try:
-        return get_content_status(db, for_date)
+        horoscope_signs = {
+            r.zodiac_sign for r in
+            db.query(Horoscope.zodiac_sign).filter(Horoscope.date == date_str).all()
+        }
+        pool_combos = {
+            (r.zodiac_sign, r.topic) for r in
+            db.query(FortunePool.zodiac_sign, FortunePool.topic).filter(FortunePool.date == date_str).all()
+        }
+        story_count = db.query(Story).count()
+        compat_count = db.query(Compatibility).count()
+        tarot_ct = db.query(TarotCard).count()
+
+        return {
+            "date": date_str,
+            "horoscopes": {"count": len(horoscope_signs), "expected": 12, "signs": sorted(horoscope_signs)},
+            "fortune_pool": {"count": len(pool_combos), "expected": 60},
+            "stories": story_count,
+            "compatibility_pairs": {"count": compat_count, "expected": 78},
+            "tarot_cards": {"count": tarot_ct, "expected": 78},
+            "fully_populated": (
+                len(horoscope_signs) >= 12
+                and len(pool_combos) >= 60
+                and story_count >= 3
+                and compat_count >= 78
+                and tarot_ct >= 78
+            ),
+        }
     finally:
         db.close()
 

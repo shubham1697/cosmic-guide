@@ -512,6 +512,7 @@ class _ChartPainter extends CustomPainter {
 class ChartScreen extends StatefulWidget {
   final String userSign;
   final HoroscopeData? initialHoroscope;
+  final ValueChanged<HoroscopeData>? onHoroscopeUpdated;
   final String? birthDate; // YYYY-MM-DD
   final String? birthTime; // HH:MM
   final String? birthPlace;
@@ -520,6 +521,7 @@ class ChartScreen extends StatefulWidget {
     super.key,
     required this.userSign,
     this.initialHoroscope,
+    this.onHoroscopeUpdated,
     this.birthDate,
     this.birthTime,
     this.birthPlace,
@@ -589,7 +591,10 @@ class _ChartScreenState extends State<ChartScreen>
         if (data != null) _horoscope = data;
         _isLoading = false;
       });
-      if (data != null) _chartAnim.forward(from: 0);
+      if (data != null) {
+        widget.onHoroscopeUpdated?.call(data);
+        _chartAnim.forward(from: 0);
+      }
     }
   }
 

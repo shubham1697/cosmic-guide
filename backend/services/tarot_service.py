@@ -72,10 +72,7 @@ def draw_tarot_card(db=None) -> dict:
                         card_row.reversed_interpretation if is_reversed
                         else card_row.upright_interpretation
                     )
-                    logger.info(
-                        "draw_tarot_card  DB  card='%s'  reversed=%s",
-                        card_row.name, is_reversed,
-                    )
+                    logger.info("draw_tarot_card  source=db  card='%s'  reversed=%s", card_row.name, is_reversed)
                     return {
                         "name": card_row.name,
                         "number": card_row.number,
@@ -85,11 +82,17 @@ def draw_tarot_card(db=None) -> dict:
                     }
         except Exception as exc:
             logger.warning("draw_tarot_card  DB error (%s)", exc)
+            logger.warning("draw_tarot_card  source=mock  reason=db_fetch_failed")
 
-    # DB unavailable — surface the error
-    from fastapi import HTTPException
-    raise HTTPException(
-        status_code=503,
-        detail="Tarot service temporarily unavailable. Please try again shortly.",
-    )
+    # Static fallback from backend tarot dataset.
+    fallback = random.choice(TAROT_CARDS)
+    interpretation = fallback["reversed"] if is_reversed else fallback["upright"]
+    logger.info("draw_tarot_card  source=mock  card='%s'  reversed=%s", fallback["name"], is_reversed)
+    return {
+        "name": fallback["name"],
+        "number": fallback["number"],
+        "meaning": fallback["meaning"],
+        "interpretation": interpretation,
+        "is_reversed": is_reversed,
+    }
 

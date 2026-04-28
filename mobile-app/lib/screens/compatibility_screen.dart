@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
+import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 
@@ -17,18 +18,32 @@ class CompatibilityScreen extends StatefulWidget {
 class _CompatibilityScreenState extends State<CompatibilityScreen> {
   String? _sign1;
   String? _sign2;
-  dynamic _result;
+  CompatibilityResult? _result;
   bool _isChecking = false;
+  String? _errorMessage;
 
   Future<void> _checkCompatibility() async {
     if (_sign1 == null || _sign2 == null) return;
-    setState(() => _isChecking = true);
+    setState(() {
+      _isChecking = true;
+      _errorMessage = null;
+    });
     final result = await ApiService.checkCompatibility(_sign1!, _sign2!);
     if (mounted) {
       setState(() {
         _result = result;
         _isChecking = false;
+        _errorMessage = result == null
+            ? 'Could not fetch compatibility right now. Check backend connectivity and try again.'
+            : null;
       });
+      if (result == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Compatibility check failed. Please try again.'),
+          ),
+        );
+      }
     }
   }
 
@@ -96,6 +111,15 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                _errorMessage!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.love, fontSize: 13),
+              ),
+            ),
           if (_result != null) _buildResultCard(),
         ],
       ),
@@ -173,6 +197,16 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
   }
 
   Widget _buildResultCard() {
+    final result = _result!;
+    final loveAdvice = result.loveAdvice.trim().isNotEmpty
+        ? result.loveAdvice
+        : 'No love advice available for this pair yet.';
+    final strengths = result.strengthsTogether.trim().isNotEmpty
+        ? result.strengthsTogether
+        : 'Strength insights are still being prepared.';
+    final challenges = result.challenges.trim().isNotEmpty
+        ? result.challenges
+        : 'Challenge insights are still being prepared.';
     return Column(
       children: [
         Container(
@@ -207,26 +241,26 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
               ),
               const SizedBox(height: 20),
               Text(
-                '${_result.score}%',
+                '${result.score}%',
                 style: GoogleFonts.playfairDisplay(
                   fontSize: 48,
                   fontWeight: FontWeight.bold,
-                  color: _result.score >= 80
+                  color: result.score >= 80
                       ? AppColors.health
-                      : _result.score >= 60
+                      : result.score >= 60
                       ? AppColors.accent
                       : AppColors.love,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
-                _result.score >= 80
+                result.score >= 80
                     ? 'Excellent Match!'
-                    : _result.score >= 60
+                    : result.score >= 60
                     ? 'Promising Match'
                     : 'Challenging Match',
                 style: TextStyle(
-                  color: _result.score >= 80
+                  color: result.score >= 80
                       ? AppColors.health
                       : AppColors.accent,
                   fontWeight: FontWeight.bold,
@@ -235,7 +269,7 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                _result.description,
+                result.description,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
@@ -249,21 +283,21 @@ class _CompatibilityScreenState extends State<CompatibilityScreen> {
         const SizedBox(height: 16),
         _buildInsightCard(
           'Love Advice',
-          _result.loveAdvice,
+          loveAdvice,
           Icons.favorite,
           AppColors.love,
         ),
         const SizedBox(height: 12),
         _buildInsightCard(
           'Strengths Together',
-          _result.strengthsTogether,
+          strengths,
           Icons.flash_on,
           AppColors.accent,
         ),
         const SizedBox(height: 12),
         _buildInsightCard(
           'Challenges',
-          _result.challenges,
+          challenges,
           Icons.warning_amber,
           AppColors.career,
         ),

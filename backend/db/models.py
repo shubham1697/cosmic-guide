@@ -41,7 +41,7 @@ class TarotCard(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), unique=True, nullable=False)
-    number = Column(String(10))
+    number = Column(String(20))
     meaning = Column(Text)
     upright_interpretation = Column(Text)
     reversed_interpretation = Column(Text)

@@ -142,6 +142,12 @@ class _MainShellState extends State<MainShell> {
     if (mounted) setState(() => _sharedHoroscope = data);
   }
 
+  void _updateSharedHoroscope(HoroscopeData data) {
+    if (!mounted) return;
+    if (_sharedHoroscope == data) return;
+    setState(() => _sharedHoroscope = data);
+  }
+
   void _onProfileUpdated(String name, String sign) {
     setState(() {
       _userName = name;
@@ -163,12 +169,14 @@ class _MainShellState extends State<MainShell> {
         userName: _userName,
         userSign: _userSign,
         initialHoroscope: _sharedHoroscope,
+        onHoroscopeUpdated: _updateSharedHoroscope,
         onChartTap: () => _navigateToTab(1),
         onDiscoverTap: () => _navigateToTab(2),
       ),
       ChartScreen(
         userSign: _userSign,
         initialHoroscope: _sharedHoroscope,
+        onHoroscopeUpdated: _updateSharedHoroscope,
         birthDate: _birthDate.isNotEmpty ? _birthDate : null,
         birthTime: _birthTime.isNotEmpty ? _birthTime : null,
         birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,

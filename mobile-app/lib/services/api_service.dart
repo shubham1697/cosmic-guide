@@ -1,10 +1,35 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 import '../models/zodiac.dart';
 
 class ApiService {
-  // Local backend (Docker): use 10.0.2.2 for Android emulator, localhost for iOS/web
-  static const String _baseUrl = 'http://localhost:8000/api/v1';
+  // Optional override for physical devices:
+  // flutter run --dart-define=API_HOST=192.168.29.123
+  static const String _apiHostOverride = String.fromEnvironment(
+    'API_HOST',
+    defaultValue: '',
+  );
+
+  // Local backend (Docker): Android emulator must use 10.0.2.2.
+  static String get _baseUrl {
+    if (_apiHostOverride.isNotEmpty) {
+      return 'http://$_apiHostOverride:8000/api/v1';
+    }
+    if (kIsWeb) {
+      return 'http://localhost:8000/api/v1';
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return 'http://10.0.2.2:8000/api/v1';
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+      case TargetPlatform.linux:
+      case TargetPlatform.fuchsia:
+        return 'http://localhost:8000/api/v1';
+    }
+  }
 
   // Render free tier can take 15-30s to cold-start; use a generous timeout.
   static const _timeout = Duration(seconds: 20);
@@ -91,26 +116,42 @@ class ApiService {
     String sign2,
   ) async {
     try {
+      final url = Uri.parse('$_baseUrl/compatibility/check');
+      debugPrint(
+        'checkCompatibility request: url=$url sign1=$sign1 sign2=$sign2',
+      );
       final response = await http
           .post(
-            Uri.parse('$_baseUrl/compatibility/check'),
+            url,
             headers: {'Content-Type': 'application/json'},
             body: json.encode({'sign1': sign1, 'sign2': sign2}),
           )
           .timeout(_timeout);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        final loveAdvice = (data['loveAdvice'] ?? data['love_advice'] ?? '')
+            .toString();
+        final strengthsTogether =
+            (data['strengthsTogether'] ?? data['strengths_together'] ?? '')
+                .toString();
+        final challenges = (data['challenges'] ?? data['challenge'] ?? '')
+            .toString();
         return CompatibilityResult(
-          sign1: data['sign1'],
-          sign2: data['sign2'],
-          score: data['score'],
-          description: data['description'],
-          loveAdvice: data['loveAdvice'],
-          strengthsTogether: data['strengthsTogether'],
-          challenges: data['challenges'],
+          sign1: (data['sign1'] ?? sign1).toString(),
+          sign2: (data['sign2'] ?? sign2).toString(),
+          score: (data['score'] as num?)?.toInt() ?? 70,
+          description: (data['description'] ?? '').toString(),
+          loveAdvice: loveAdvice,
+          strengthsTogether: strengthsTogether,
+          challenges: challenges,
         );
       }
-    } catch (_) {}
+      debugPrint(
+        'checkCompatibility failed: status=${response.statusCode} body=${response.body}',
+      );
+    } catch (e) {
+      debugPrint('checkCompatibility exception: $e');
+    }
     return null;
   }
 

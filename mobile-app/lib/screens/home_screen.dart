@@ -12,6 +12,7 @@ class HomeScreen extends StatefulWidget {
   final String userName;
   final String userSign;
   final HoroscopeData? initialHoroscope;
+  final ValueChanged<HoroscopeData>? onHoroscopeUpdated;
   final VoidCallback onChartTap;
   final VoidCallback onDiscoverTap;
 
@@ -20,6 +21,7 @@ class HomeScreen extends StatefulWidget {
     required this.userName,
     required this.userSign,
     this.initialHoroscope,
+    this.onHoroscopeUpdated,
     required this.onChartTap,
     required this.onDiscoverTap,
   });
@@ -123,6 +125,10 @@ class _HomeScreenState extends State<HomeScreen> {
         _stories = results[1] as List<AstrologyStory>;
         _isLoading = false;
       });
+      final horoscope = results[0] as HoroscopeData?;
+      if (horoscope != null) {
+        widget.onHoroscopeUpdated?.call(horoscope);
+      }
     }
   }
 

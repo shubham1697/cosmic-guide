@@ -1,14 +1,33 @@
 """Horoscope data and retrieval."""
 
 from datetime import date
+import time
 
 from logger import get_logger
+from logging_utils import log_db_query
+from data.mock.horoscope_data import HOROSCOPE_DATA, DEFAULT_HOROSCOPE
 
 logger = get_logger(__name__)
 
 # In-memory cache: { (zodiac_sign, "YYYY-MM-DD"): dict }
 # Ensures all requests in the same process return the same daily result.
 _horoscope_cache: dict = {}
+
+
+def _mock_horoscope(zodiac_sign: str, today_str: str) -> dict:
+    template = HOROSCOPE_DATA.get(zodiac_sign, DEFAULT_HOROSCOPE)
+    return {
+        "sign": zodiac_sign,
+        "date": today_str,
+        "general": str(template.get("general", "")),
+        "love": str(template.get("love", "")),
+        "career": str(template.get("career", "")),
+        "health": str(template.get("health", "")),
+        "overall_score": int(template.get("overall_score", 75)),
+        "lucky_number": str(template.get("lucky_number", "9")),
+        "lucky_color": str(template.get("lucky_color", "Purple")),
+        "mood": str(template.get("mood", "Intuitive")),
+    }
 
 
 def get_horoscope(zodiac_sign: str, db=None) -> dict:
@@ -30,20 +49,24 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
     # ── 1. In-memory cache ───────────────────────────────────────────────────
     cache_key = (zodiac_sign, today_str)
     if cache_key in _horoscope_cache:
-        logger.debug("get_horoscope  CACHE HIT (memory)  sign=%s", zodiac_sign)
+        logger.info("get_horoscope  source=memory  sign=%s  date=%s", zodiac_sign, today_str)
         return _horoscope_cache[cache_key]
 
     # ── 2. DB cache ──────────────────────────────────────────────────────────
     if db is not None:
         try:
             from db.models import Horoscope
+            t0 = time.perf_counter()
             cached = (
                 db.query(Horoscope)
                 .filter(Horoscope.zodiac_sign == zodiac_sign, Horoscope.date == today_str)
                 .first()
             )
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            
             if cached:
-                logger.info("get_horoscope  DB HIT  sign=%s", zodiac_sign)
+                log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", rows_affected=1, elapsed_ms=elapsed_ms)
+                logger.info("get_horoscope  source=db  sign=%s  date=%s", zodiac_sign, today_str)
                 result = {
                     "sign": zodiac_sign,
                     "date": today_str,
@@ -59,9 +82,15 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                 _horoscope_cache[cache_key] = result
                 return result
             else:
+                log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", rows_affected=0, elapsed_ms=elapsed_ms)
                 logger.debug("get_horoscope  DB MISS  sign=%s", zodiac_sign)
         except Exception as exc:
-            logger.warning("get_horoscope  DB query failed (%s) \u2014 skipping to AI", exc)
+            logger.warning("get_horoscope  DB query failed (%s)", exc)
+            log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", error=exc, elapsed_ms=0)
+            logger.warning("get_horoscope  source=mock  sign=%s  date=%s  reason=db_fetch_failed", zodiac_sign, today_str)
+            mock_result = _mock_horoscope(zodiac_sign, today_str)
+            _horoscope_cache[cache_key] = mock_result
+            return mock_result
 
     # ── 3. AI generation ─────────────────────────────────────────────────────
     try:
@@ -69,10 +98,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
         logger.debug("get_horoscope  calling AI  sign=%s", zodiac_sign)
         ai_data = generate_daily_horoscope(zodiac_sign, today)
         if ai_data:
-            logger.info(
-                "get_horoscope  AI OK  sign=%s  score=%d  mood=%s",
-                zodiac_sign, ai_data["overall_score"], ai_data["mood"],
-            )
+            logger.info("get_horoscope  source=llm  sign=%s  date=%s", zodiac_sign, today_str)
             # Persist in DB for subsequent requests today
             if db is not None:
                 try:
@@ -107,9 +133,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
     except Exception as exc:
         logger.warning("get_horoscope  AI exception (%s)  sign=%s", exc, zodiac_sign)
 
-    # AI unavailable and no cached data — surface the error
-    from fastapi import HTTPException
-    raise HTTPException(
-        status_code=503,
-        detail="Horoscope service temporarily unavailable. Please try again shortly.",
-    )
+    logger.warning("get_horoscope  source=mock  sign=%s  date=%s  reason=ai_unavailable", zodiac_sign, today_str)
+    mock_result = _mock_horoscope(zodiac_sign, today_str)
+    _horoscope_cache[cache_key] = mock_result
+    return mock_result

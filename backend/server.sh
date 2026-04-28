@@ -16,7 +16,7 @@ start() {
 
     echo "Starting CosmicGuide backend on port $PORT..."
     source "$BACKEND_DIR/venv/bin/activate"
-    uvicorn main:app --reload --port "$PORT" --app-dir "$BACKEND_DIR" &
+    uvicorn main:app --reload --port "$PORT" --app-dir "$BACKEND_DIR" >> "$BACKEND_DIR/backend.log" 2>&1 &
     echo $! > "$PID_FILE"
     sleep 1
 
@@ -24,6 +24,7 @@ start() {
         echo "Server started (PID: $(cat "$PID_FILE"))"
         echo "API:  http://127.0.0.1:$PORT"
         echo "Docs: http://127.0.0.1:$PORT/docs"
+        echo "Logs: tail -f $BACKEND_DIR/backend.log"
     else
         echo "Failed to start server"
         rm -f "$PID_FILE"
