@@ -17,3 +17,5 @@ venv/
 backend/__pycache__/
 backend/venv/
 backend/*.db
+backend/*.log
+*.log
