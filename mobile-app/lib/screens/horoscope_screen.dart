@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
@@ -24,6 +27,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
   late TabController _tabController;
   HoroscopeData? horoscope;
   bool _isLoading = true;
+  DateTime _selectedDate = DateTime.now();
 
   @override
   void initState() {
@@ -60,15 +64,96 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
     }
   }
 
+  void _goToPreviousDay() {
+    setState(() {
+      _selectedDate = _selectedDate.subtract(const Duration(days: 1));
+    });
+    _loadHoroscope();
+  }
+
+  void _goToNextDay() {
+    final today = DateTime.now();
+    if (_selectedDate.isBefore(DateTime(today.year, today.month, today.day))) {
+      setState(() {
+        _selectedDate = _selectedDate.add(const Duration(days: 1));
+      });
+      _loadHoroscope();
+    }
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: AppColors.accent,
+              onPrimary: AppColors.primary,
+              surface: AppColors.secondary,
+              onSurface: AppColors.textPrimary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && picked != _selectedDate) {
+      setState(() => _selectedDate = picked);
+      _loadHoroscope();
+    }
+  }
+
+  void _shareHoroscope() {
+    if (horoscope == null) return;
+    final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
+    final dateStr = DateFormat('MMMM d, yyyy').format(_selectedDate);
+    final text =
+        '${sign.symbol} ${sign.name} Horoscope — $dateStr\n\n'
+        '⭐ Overall Score: ${horoscope!.overallScore}%\n\n'
+        '✨ General: ${horoscope!.general}\n\n'
+        '❤️ Love: ${horoscope!.love}\n\n'
+        '💼 Career: ${horoscope!.career}\n\n'
+        '🍀 Lucky Number: ${horoscope!.luckyNumber} | Color: ${horoscope!.luckyColor} | Mood: ${horoscope!.mood}\n\n'
+        '— CosmicGuide App';
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Horoscope copied to clipboard!'),
+        backgroundColor: AppColors.card,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
   }
 
+  String get _dateLabel {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+    );
+    if (selected == today) return 'Today';
+    if (selected == today.subtract(const Duration(days: 1))) return 'Yesterday';
+    return DateFormat('MMM d').format(_selectedDate);
+  }
+
   @override
   Widget build(BuildContext context) {
     final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
+    final isToday =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day) ==
+        DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
 
     return StarryBackground(
       child: Scaffold(
@@ -77,6 +162,12 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
           title: Text('Daily Horoscope', style: GoogleFonts.playfairDisplay()),
           backgroundColor: Colors.transparent,
           actions: [
+            if (horoscope != null)
+              IconButton(
+                icon: const Icon(Icons.share, size: 20),
+                onPressed: _shareHoroscope,
+                tooltip: 'Share',
+              ),
             if (_isLoading)
               const Padding(
                 padding: EdgeInsets.only(right: 16),
@@ -90,69 +181,132 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
               ),
           ],
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            children: [
-              _buildSignHeader(sign),
-              const SizedBox(height: 24),
-              if (_isLoading && horoscope == null)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: CircularProgressIndicator(color: AppColors.accent),
-                  ),
-                )
-              else if (horoscope == null)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 40),
-                    child: Text(
-                      'Reading unavailable. Pull down to refresh.',
-                      style: TextStyle(color: AppColors.textMuted),
+        body: GestureDetector(
+          onHorizontalDragEnd: (details) {
+            if (details.primaryVelocity == null) return;
+            if (details.primaryVelocity! > 300) {
+              _goToPreviousDay();
+            } else if (details.primaryVelocity! < -300) {
+              _goToNextDay();
+            }
+          },
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                _buildDateNavigator(isToday),
+                const SizedBox(height: 16),
+                _buildSignHeader(sign),
+                const SizedBox(height: 24),
+                if (_isLoading && horoscope == null)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: CircularProgressIndicator(color: AppColors.accent),
+                    ),
+                  )
+                else if (horoscope == null)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Text(
+                        'Reading unavailable. Pull down to refresh.',
+                        style: TextStyle(color: AppColors.textMuted),
+                      ),
+                    ),
+                  )
+                else ...[
+                  _buildScoreRing(),
+                  const SizedBox(height: 24),
+                  _buildTabBar(),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 200,
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildContent(
+                          horoscope!.general,
+                          Icons.star,
+                          AppColors.general,
+                        ),
+                        _buildContent(
+                          horoscope!.love,
+                          Icons.favorite,
+                          AppColors.love,
+                        ),
+                        _buildContent(
+                          horoscope!.career,
+                          Icons.work,
+                          AppColors.career,
+                        ),
+                        _buildContent(
+                          horoscope!.health,
+                          Icons.health_and_safety,
+                          AppColors.health,
+                        ),
+                      ],
                     ),
                   ),
-                )
-              else ...[
-                _buildScoreRing(),
-                const SizedBox(height: 24),
-                _buildTabBar(),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 200,
-                  child: TabBarView(
-                    controller: _tabController,
-                    children: [
-                      _buildContent(
-                        horoscope!.general,
-                        Icons.star,
-                        AppColors.general,
-                      ),
-                      _buildContent(
-                        horoscope!.love,
-                        Icons.favorite,
-                        AppColors.love,
-                      ),
-                      _buildContent(
-                        horoscope!.career,
-                        Icons.work,
-                        AppColors.career,
-                      ),
-                      _buildContent(
-                        horoscope!.health,
-                        Icons.health_and_safety,
-                        AppColors.health,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                _buildLuckySection(),
+                  const SizedBox(height: 24),
+                  _buildLuckySection(),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildDateNavigator(bool isToday) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left, color: AppColors.textSecondary),
+          onPressed: _goToPreviousDay,
+        ),
+        GestureDetector(
+          onTap: _pickDate,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.accent.withAlpha(77)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.calendar_today,
+                  size: 16,
+                  color: AppColors.accent,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _dateLabel,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        IconButton(
+          icon: Icon(
+            Icons.chevron_right,
+            color: isToday
+                ? AppColors.textMuted.withAlpha(77)
+                : AppColors.textSecondary,
+          ),
+          onPressed: isToday ? null : _goToNextDay,
+        ),
+      ],
     );
   }
 

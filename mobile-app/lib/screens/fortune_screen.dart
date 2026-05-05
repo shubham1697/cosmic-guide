@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/fortune_options_data.dart';
 import '../services/api_service.dart';
@@ -19,6 +21,8 @@ class _FortuneScreenState extends State<FortuneScreen>
   String? _selectedMood;
   String? _fortune;
   bool _isGenerating = false;
+  bool _showHistory = false;
+  List<Map<String, String>> _fortuneHistory = [];
   late AnimationController _glowController;
 
   @override
@@ -28,12 +32,41 @@ class _FortuneScreenState extends State<FortuneScreen>
       duration: const Duration(seconds: 2),
       vsync: this,
     )..repeat(reverse: true);
+    _loadHistory();
   }
 
   @override
   void dispose() {
     _glowController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList('fortune_history') ?? [];
+    setState(() {
+      _fortuneHistory = raw
+          .map((e) => Map<String, String>.from(json.decode(e)))
+          .toList()
+          .reversed
+          .toList();
+    });
+  }
+
+  Future<void> _saveToHistory(String fortune) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entry = json.encode({
+      'fortune': fortune,
+      'topic': _selectedTopic ?? '',
+      'mood': _selectedMood ?? '',
+      'date': DateTime.now().toIso8601String(),
+    });
+    final raw = prefs.getStringList('fortune_history') ?? [];
+    raw.add(entry);
+    // Keep last 50 fortunes
+    if (raw.length > 50) raw.removeRange(0, raw.length - 50);
+    await prefs.setStringList('fortune_history', raw);
+    _loadHistory();
   }
 
   Future<void> _generateFortune() async {
@@ -49,6 +82,9 @@ class _FortuneScreenState extends State<FortuneScreen>
         _fortune = fortune;
         _isGenerating = false;
       });
+      if (fortune != null) {
+        _saveToHistory(fortune);
+      }
     }
   }
 
@@ -68,15 +104,76 @@ class _FortuneScreenState extends State<FortuneScreen>
           padding: const EdgeInsets.all(20),
           child: Column(
             children: [
-              _buildCrystalBall(),
-              const SizedBox(height: 32),
-              _buildTopicSelector(),
-              const SizedBox(height: 20),
-              _buildMoodSelector(),
-              const SizedBox(height: 32),
-              _buildGenerateButton(),
+              // Toggle between generator and history
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _showHistory = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          gradient: !_showHistory
+                              ? AppColors.gradientPurple
+                              : null,
+                          color: _showHistory ? AppColors.card : null,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'Generate',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: !_showHistory
+                                ? Colors.white
+                                : AppColors.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _showHistory = true),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        decoration: BoxDecoration(
+                          gradient: _showHistory
+                              ? AppColors.gradientGold
+                              : null,
+                          color: !_showHistory ? AppColors.card : null,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          'History (${_fortuneHistory.length})',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: _showHistory
+                                ? AppColors.primary
+                                : AppColors.textMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
-              if (_fortune != null) _buildFortuneCard(),
+              if (_showHistory)
+                _buildHistoryList()
+              else ...[
+                _buildCrystalBall(),
+                const SizedBox(height: 32),
+                _buildTopicSelector(),
+                const SizedBox(height: 20),
+                _buildMoodSelector(),
+                const SizedBox(height: 32),
+                _buildGenerateButton(),
+                const SizedBox(height: 24),
+                if (_fortune != null) _buildFortuneCard(),
+              ],
             ],
           ),
         ),
@@ -284,6 +381,118 @@ class _FortuneScreenState extends State<FortuneScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHistoryList() {
+    if (_fortuneHistory.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 60),
+        child: Column(
+          children: [
+            Icon(
+              Icons.history,
+              color: AppColors.textMuted.withAlpha(100),
+              size: 48,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'No fortunes yet',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Generate your first fortune to see it here',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: _fortuneHistory.map((entry) {
+        final date = DateTime.tryParse(entry['date'] ?? '');
+        final dateStr = date != null
+            ? '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}'
+            : '';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.accent.withAlpha(38)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (entry['topic']?.isNotEmpty == true)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.gradientPurple,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        entry['topic']!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  if (entry['mood']?.isNotEmpty == true) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withAlpha(30),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        entry['mood']!,
+                        style: const TextStyle(
+                          color: AppColors.accent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const Spacer(),
+                  Text(
+                    dateStr,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                entry['fortune'] ?? '',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 15,
+                  color: AppColors.textPrimary,
+                  height: 1.5,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
     );
   }
 }

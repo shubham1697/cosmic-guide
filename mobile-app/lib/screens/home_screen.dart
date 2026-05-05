@@ -6,6 +6,8 @@ import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
+import 'fortune_screen.dart';
+import 'tarot_screen.dart';
 import 'story_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,7 +16,6 @@ class HomeScreen extends StatefulWidget {
   final HoroscopeData? initialHoroscope;
   final ValueChanged<HoroscopeData>? onHoroscopeUpdated;
   final VoidCallback onChartTap;
-  final VoidCallback onDiscoverTap;
 
   const HomeScreen({
     super.key,
@@ -23,7 +24,6 @@ class HomeScreen extends StatefulWidget {
     this.initialHoroscope,
     this.onHoroscopeUpdated,
     required this.onChartTap,
-    required this.onDiscoverTap,
   });
 
   @override
@@ -152,6 +152,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildGreeting(context, sign),
                 const SizedBox(height: 24),
                 _buildDailyCard(context, horoscope),
+                const SizedBox(height: 24),
+                _buildQuickActions(context),
                 const SizedBox(height: 24),
                 _buildDailyTarotWidget(context),
                 const SizedBox(height: 24),
@@ -299,6 +301,102 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActions(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Quick Actions', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildActionCard(
+                context,
+                icon: Icons.style,
+                title: 'Tarot',
+                subtitle: 'Draw your card',
+                accentColor: AppColors.purple,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const TarotScreen()),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildActionCard(
+                context,
+                icon: Icons.auto_awesome,
+                title: 'Fortune',
+                subtitle: 'Get your reading',
+                accentColor: AppColors.accent,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => FortuneScreen(userSign: widget.userSign),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionCard(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color accentColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: AppColors.gradientCard,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accentColor.withAlpha(77)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: accentColor.withAlpha(30),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: accentColor, size: 22),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 12),
+            ),
           ],
         ),
       ),
@@ -629,7 +727,10 @@ class _HomeScreenState extends State<HomeScreen> {
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.pop(context);
-                  widget.onDiscoverTap();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const TarotScreen()),
+                  );
                 },
                 icon: const Icon(Icons.style, size: 18),
                 label: const Text('Draw Your Own Card'),

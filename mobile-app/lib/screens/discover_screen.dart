@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
@@ -20,16 +21,36 @@ class DiscoverScreen extends StatefulWidget {
 class _DiscoverScreenState extends State<DiscoverScreen> {
   List<AstrologyStory> _stories = [];
   String _selectedCategory = 'All';
+  Set<String> _bookmarkedTitles = {};
 
   @override
   void initState() {
     super.initState();
     _loadStories();
+    _loadBookmarks();
   }
 
   Future<void> _loadStories() async {
     final stories = await ApiService.getStories();
     if (mounted) setState(() => _stories = stories);
+  }
+
+  Future<void> _loadBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getStringList('bookmarked_stories') ?? [];
+    if (mounted) setState(() => _bookmarkedTitles = saved.toSet());
+  }
+
+  Future<void> _toggleBookmark(String title) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      if (_bookmarkedTitles.contains(title)) {
+        _bookmarkedTitles.remove(title);
+      } else {
+        _bookmarkedTitles.add(title);
+      }
+    });
+    await prefs.setStringList('bookmarked_stories', _bookmarkedTitles.toList());
   }
 
   @override
@@ -41,10 +62,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             .toSet()
             .toList()
           ..sort();
-    final categories = ['All', ...rawCategories];
+    final categories = ['All', '⭐ Saved', ...rawCategories];
 
     final filtered = _selectedCategory == 'All'
         ? _stories
+        : _selectedCategory == '⭐ Saved'
+        ? _stories.where((s) => _bookmarkedTitles.contains(s.title)).toList()
         : _stories.where((s) => s.category == _selectedCategory).toList();
 
     return StarryBackground(
@@ -187,7 +210,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (context, i) => _StoryCard(story: filtered[i]),
+                    (context, i) => _StoryCard(
+                      story: filtered[i],
+                      isBookmarked: _bookmarkedTitles.contains(
+                        filtered[i].title,
+                      ),
+                      onBookmarkToggle: () =>
+                          _toggleBookmark(filtered[i].title),
+                    ),
                     childCount: filtered.length,
                   ),
                 ),
@@ -287,8 +317,14 @@ class _FeatureCard extends StatelessWidget {
 
 class _StoryCard extends StatelessWidget {
   final AstrologyStory story;
+  final bool isBookmarked;
+  final VoidCallback onBookmarkToggle;
 
-  const _StoryCard({required this.story});
+  const _StoryCard({
+    required this.story,
+    required this.isBookmarked,
+    required this.onBookmarkToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -346,9 +382,24 @@ class _StoryCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              story.readTime,
-              style: const TextStyle(color: AppColors.accent, fontSize: 11),
+            Column(
+              children: [
+                GestureDetector(
+                  onTap: onBookmarkToggle,
+                  child: Icon(
+                    isBookmarked ? Icons.bookmark : Icons.bookmark_border,
+                    color: isBookmarked
+                        ? AppColors.accent
+                        : AppColors.textMuted,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  story.readTime,
+                  style: const TextStyle(color: AppColors.accent, fontSize: 11),
+                ),
+              ],
             ),
           ],
         ),

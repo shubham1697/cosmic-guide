@@ -241,3 +241,78 @@ class TransitPosition(CamelModel):
 
 class TransitsResponse(CamelModel):
     transits: list[TransitPosition]
+
+
+# --- Vedic Home Summary Schemas ---
+
+class VedicLocationSummary(CamelModel):
+    name: str
+    latitude: float
+    longitude: float
+    timezone: str
+
+
+class PanchangSummary(CamelModel):
+    date: str
+    vara: str
+    vara_ruler: str
+    tithi: str
+    paksha: str
+    nakshatra: str
+    yoga: str
+    karana: str
+    insight: str
+
+
+class VedicCalendarSummary(CamelModel):
+    month_name: str
+    samvat_year: int
+    next_festival_name: str
+    next_festival_date: str
+    note: str
+
+
+class MuhurtaSummary(CamelModel):
+    label: str
+    starts_at: str
+    ends_at: str
+    note: str
+
+
+class KundliHomeSummary(CamelModel):
+    lagna: str
+    moon_sign: str
+    nakshatra: str
+    note: str
+
+
+class DashaHomeSummary(CamelModel):
+    mahadasha: str
+    mahadasha_ends_on: str
+    antardasha: str
+    guidance: str
+
+
+class DoshaHomeSummary(CamelModel):
+    active_count: int
+    top_doshas: list[str]
+    summary: str
+
+
+class RemedyHomeSummary(CamelModel):
+    focus: str
+    gemstone: str
+    mantra: str
+    fasting_day: str
+    guidance: str
+
+
+class VedicHomeSummaryResponse(CamelModel):
+    location: VedicLocationSummary
+    panchang: PanchangSummary
+    calendar: VedicCalendarSummary
+    muhurta: MuhurtaSummary
+    kundli: Optional[KundliHomeSummary] = None
+    dasha: Optional[DashaHomeSummary] = None
+    dosha: Optional[DoshaHomeSummary] = None
+    remedy: Optional[RemedyHomeSummary] = None

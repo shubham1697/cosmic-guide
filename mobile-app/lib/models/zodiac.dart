@@ -234,11 +234,38 @@ class NakshatraData {
   }
 }
 
+class HouseCusp {
+  final int house;
+  final double cuspLongitude;
+  final String sign;
+  final double degreeInSign;
+  final String degreeDisplay;
+
+  const HouseCusp({
+    required this.house,
+    required this.cuspLongitude,
+    required this.sign,
+    required this.degreeInSign,
+    required this.degreeDisplay,
+  });
+
+  factory HouseCusp.fromJson(Map<String, dynamic> json) {
+    return HouseCusp(
+      house: json['house'] ?? 1,
+      cuspLongitude: (json['cuspLongitude'] ?? 0).toDouble(),
+      sign: json['sign'] ?? '',
+      degreeInSign: (json['degreeInSign'] ?? 0).toDouble(),
+      degreeDisplay: json['degreeDisplay'] ?? '',
+    );
+  }
+}
+
 class BirthChartData {
   final List<PlanetPosition> planets;
   final Big3Data big3;
   final NakshatraData moonNakshatra;
   final List<AspectData> aspects;
+  final List<HouseCusp> houses;
   final bool hasAccurateHouses;
   final double? ascendantLongitude;
   final double? midheavenLongitude;
@@ -248,6 +275,7 @@ class BirthChartData {
     required this.big3,
     required this.moonNakshatra,
     required this.aspects,
+    required this.houses,
     required this.hasAccurateHouses,
     this.ascendantLongitude,
     this.midheavenLongitude,
@@ -265,6 +293,9 @@ class BirthChartData {
       aspects: (json['aspects'] as List? ?? [])
           .map((a) => AspectData.fromJson(a))
           .toList(),
+      houses: (json['houses'] as List? ?? [])
+          .map((h) => HouseCusp.fromJson(h))
+          .toList(),
       hasAccurateHouses: json['hasAccurateHouses'] ?? false,
       ascendantLongitude: ascendant is Map
           ? (ascendant['longitude'] as num?)?.toDouble()
@@ -272,6 +303,253 @@ class BirthChartData {
       midheavenLongitude: midheaven is Map
           ? (midheaven['longitude'] as num?)?.toDouble()
           : null,
+    );
+  }
+}
+
+class VedicLocationData {
+  final String name;
+  final double latitude;
+  final double longitude;
+  final String timezone;
+
+  const VedicLocationData({
+    required this.name,
+    required this.latitude,
+    required this.longitude,
+    required this.timezone,
+  });
+
+  factory VedicLocationData.fromJson(Map<String, dynamic> json) {
+    return VedicLocationData(
+      name: (json['name'] ?? '').toString(),
+      latitude: (json['latitude'] ?? 0).toDouble(),
+      longitude: (json['longitude'] ?? 0).toDouble(),
+      timezone: (json['timezone'] ?? '').toString(),
+    );
+  }
+}
+
+class PanchangSummaryData {
+  final String date;
+  final String vara;
+  final String varaRuler;
+  final String tithi;
+  final String paksha;
+  final String nakshatra;
+  final String yoga;
+  final String karana;
+  final String insight;
+
+  const PanchangSummaryData({
+    required this.date,
+    required this.vara,
+    required this.varaRuler,
+    required this.tithi,
+    required this.paksha,
+    required this.nakshatra,
+    required this.yoga,
+    required this.karana,
+    required this.insight,
+  });
+
+  factory PanchangSummaryData.fromJson(Map<String, dynamic> json) {
+    return PanchangSummaryData(
+      date: (json['date'] ?? '').toString(),
+      vara: (json['vara'] ?? '').toString(),
+      varaRuler: (json['varaRuler'] ?? '').toString(),
+      tithi: (json['tithi'] ?? '').toString(),
+      paksha: (json['paksha'] ?? '').toString(),
+      nakshatra: (json['nakshatra'] ?? '').toString(),
+      yoga: (json['yoga'] ?? '').toString(),
+      karana: (json['karana'] ?? '').toString(),
+      insight: (json['insight'] ?? '').toString(),
+    );
+  }
+}
+
+class VedicCalendarData {
+  final String monthName;
+  final int samvatYear;
+  final String nextFestivalName;
+  final String nextFestivalDate;
+  final String note;
+
+  const VedicCalendarData({
+    required this.monthName,
+    required this.samvatYear,
+    required this.nextFestivalName,
+    required this.nextFestivalDate,
+    required this.note,
+  });
+
+  factory VedicCalendarData.fromJson(Map<String, dynamic> json) {
+    return VedicCalendarData(
+      monthName: (json['monthName'] ?? '').toString(),
+      samvatYear: (json['samvatYear'] ?? 0) as int,
+      nextFestivalName: (json['nextFestivalName'] ?? '').toString(),
+      nextFestivalDate: (json['nextFestivalDate'] ?? '').toString(),
+      note: (json['note'] ?? '').toString(),
+    );
+  }
+}
+
+class MuhurtaSummaryData {
+  final String label;
+  final String startsAt;
+  final String endsAt;
+  final String note;
+
+  const MuhurtaSummaryData({
+    required this.label,
+    required this.startsAt,
+    required this.endsAt,
+    required this.note,
+  });
+
+  factory MuhurtaSummaryData.fromJson(Map<String, dynamic> json) {
+    return MuhurtaSummaryData(
+      label: (json['label'] ?? '').toString(),
+      startsAt: (json['startsAt'] ?? '').toString(),
+      endsAt: (json['endsAt'] ?? '').toString(),
+      note: (json['note'] ?? '').toString(),
+    );
+  }
+}
+
+class KundliSummaryData {
+  final String lagna;
+  final String moonSign;
+  final String nakshatra;
+  final String note;
+
+  const KundliSummaryData({
+    required this.lagna,
+    required this.moonSign,
+    required this.nakshatra,
+    required this.note,
+  });
+
+  factory KundliSummaryData.fromJson(Map<String, dynamic> json) {
+    return KundliSummaryData(
+      lagna: (json['lagna'] ?? '').toString(),
+      moonSign: (json['moonSign'] ?? '').toString(),
+      nakshatra: (json['nakshatra'] ?? '').toString(),
+      note: (json['note'] ?? '').toString(),
+    );
+  }
+}
+
+class DashaSummaryData {
+  final String mahadasha;
+  final String mahadashaEndsOn;
+  final String antardasha;
+  final String guidance;
+
+  const DashaSummaryData({
+    required this.mahadasha,
+    required this.mahadashaEndsOn,
+    required this.antardasha,
+    required this.guidance,
+  });
+
+  factory DashaSummaryData.fromJson(Map<String, dynamic> json) {
+    return DashaSummaryData(
+      mahadasha: (json['mahadasha'] ?? '').toString(),
+      mahadashaEndsOn: (json['mahadashaEndsOn'] ?? '').toString(),
+      antardasha: (json['antardasha'] ?? '').toString(),
+      guidance: (json['guidance'] ?? '').toString(),
+    );
+  }
+}
+
+class DoshaSummaryData {
+  final int activeCount;
+  final List<String> topDoshas;
+  final String summary;
+
+  const DoshaSummaryData({
+    required this.activeCount,
+    required this.topDoshas,
+    required this.summary,
+  });
+
+  factory DoshaSummaryData.fromJson(Map<String, dynamic> json) {
+    return DoshaSummaryData(
+      activeCount: (json['activeCount'] ?? 0) as int,
+      topDoshas: (json['topDoshas'] as List? ?? [])
+          .map((item) => item.toString())
+          .toList(),
+      summary: (json['summary'] ?? '').toString(),
+    );
+  }
+}
+
+class RemedySummaryData {
+  final String focus;
+  final String gemstone;
+  final String mantra;
+  final String fastingDay;
+  final String guidance;
+
+  const RemedySummaryData({
+    required this.focus,
+    required this.gemstone,
+    required this.mantra,
+    required this.fastingDay,
+    required this.guidance,
+  });
+
+  factory RemedySummaryData.fromJson(Map<String, dynamic> json) {
+    return RemedySummaryData(
+      focus: (json['focus'] ?? '').toString(),
+      gemstone: (json['gemstone'] ?? '').toString(),
+      mantra: (json['mantra'] ?? '').toString(),
+      fastingDay: (json['fastingDay'] ?? '').toString(),
+      guidance: (json['guidance'] ?? '').toString(),
+    );
+  }
+}
+
+class VedicHomeSummaryData {
+  final VedicLocationData location;
+  final PanchangSummaryData panchang;
+  final VedicCalendarData calendar;
+  final MuhurtaSummaryData muhurta;
+  final KundliSummaryData? kundli;
+  final DashaSummaryData? dasha;
+  final DoshaSummaryData? dosha;
+  final RemedySummaryData? remedy;
+
+  const VedicHomeSummaryData({
+    required this.location,
+    required this.panchang,
+    required this.calendar,
+    required this.muhurta,
+    this.kundli,
+    this.dasha,
+    this.dosha,
+    this.remedy,
+  });
+
+  factory VedicHomeSummaryData.fromJson(Map<String, dynamic> json) {
+    return VedicHomeSummaryData(
+      location: VedicLocationData.fromJson(json['location'] ?? {}),
+      panchang: PanchangSummaryData.fromJson(json['panchang'] ?? {}),
+      calendar: VedicCalendarData.fromJson(json['calendar'] ?? {}),
+      muhurta: MuhurtaSummaryData.fromJson(json['muhurta'] ?? {}),
+      kundli: json['kundli'] == null
+          ? null
+          : KundliSummaryData.fromJson(json['kundli']),
+      dasha: json['dasha'] == null
+          ? null
+          : DashaSummaryData.fromJson(json['dasha']),
+      dosha: json['dosha'] == null
+          ? null
+          : DoshaSummaryData.fromJson(json['dosha']),
+      remedy: json['remedy'] == null
+          ? null
+          : RemedySummaryData.fromJson(json['remedy']),
     );
   }
 }

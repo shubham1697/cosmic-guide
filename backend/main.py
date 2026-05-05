@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from config import settings
 from logger import configure_logging, get_logger
 from db.database import engine, Base, get_db
-from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart
+from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic
 
 # Boot logging before anything else
 configure_logging()
@@ -416,6 +416,7 @@ app.include_router(compatibility.router, prefix=settings.API_PREFIX)
 app.include_router(kundli.router, prefix=settings.API_PREFIX)
 app.include_router(stories.router, prefix=settings.API_PREFIX)
 app.include_router(chart.router, prefix=settings.API_PREFIX)
+app.include_router(vedic.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/", tags=["Root"])

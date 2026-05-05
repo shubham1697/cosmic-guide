@@ -18,6 +18,23 @@
 
 ---
 
+## Feature Track Overview
+
+This app serves two distinct astrology traditions. Features are organised accordingly:
+
+| Track | Focus | Target Users |
+|-------|-------|--------------|
+| 🌟 **Western** | Tropical zodiac, tarot, horoscope, compatibility | Global / English-first |
+| 🕉️ **Vedic** | Sidereal zodiac, Kundli, Panchang, Dasha, Nakshatra | Indian region / Hindi |
+
+Backend, auth, navigation, and infrastructure are **shared** across both tracks.
+
+---
+
+# 🌟 WESTERN ASTROLOGY TRACK
+
+---
+
 ## Phase 1 — MVP (Current)
 
 ### 1. Onboarding & User Setup
@@ -435,6 +452,13 @@ backend/
 - [ ] `POST /kundli/match` — body: { person1_birth_details, person2_birth_details }
 - [ ] `GET /stories` — paginated story feed
 - [ ] `GET /stories/:id` — single story detail
+- [ ] `GET /panchang/daily?date={date}&lat={lat}&lon={lon}` — Tithi, Vara, Nakshatra, Yoga, Karana, time slots
+- [ ] `GET /panchang/monthly?month={m}&year={y}&lat={lat}&lon={lon}` — full month Panchang
+- [ ] `POST /dasha/calculate` — body: { birth_date, birth_time, birth_place } → Vimshottari Dasha timeline
+- [ ] `POST /chart/vedic` — sidereal birth chart with house-wise planet placements
+- [ ] `POST /dosha/detect` — detect Mangal, Kaal Sarp, Nadi, Sade Sati, Pitru doshas
+- [ ] `POST /muhurta/find` — body: { category, date_from, date_to, lat, lon } → ranked muhurta list
+- [ ] `GET /calendar/hindu?month={m}&year={y}` — Hindu month, festivals, Ekadashi, Amavasya, Purnima
 
 **Infrastructure:**
 - [ ] JWT authentication middleware
@@ -655,6 +679,16 @@ backend/
 | Kundli Matching         | 11   | 1       | 8       | 20    |
 | Personality Insights    | 4    | 1       | 6       | 11    |
 | Astrology Stories       | 3    | 0       | 10      | 13    |
+| **— VEDIC TRACK —**     |      |         |         |       |
+| Panchang                | 0    | 0       | 14      | 14    |
+| Vimshottari Dasha       | 0    | 0       | 8       | 8     |
+| Kundli Chart Visual     | 0    | 0       | 9       | 9     |
+| Dosha Detection         | 0    | 0       | 7       | 7     |
+| Muhurta                 | 0    | 0       | 7       | 7     |
+| Hindu Calendar          | 0    | 0       | 11      | 11    |
+| Remedies (Upay)         | 0    | 0       | 9       | 9     |
+| Localization & Indian UX| 0    | 0       | 9       | 9     |
+| **— SHARED —**          |      |         |         |       |
 | Profile Screen          | 8    | 0       | 8       | 16    |
 | Navigation & App Shell  | 6    | 0       | 3       | 9     |
 | UI/Theme System         | 16   | 0       | 7       | 23    |
@@ -665,9 +699,10 @@ backend/
 | Push Notifications      | 0    | 0       | 11      | 11    |
 | Monetization            | 0    | 0       | 17      | 17    |
 | Deployment              | 0    | 0       | 17      | 17    |
-| **TOTAL**               | **88** | **6** | **184** | **278** |
+| **TOTAL**               | **88** | **6** | **258** | **352** |
 
-### Progress: 88 complete + 6 partial out of 278 total (34%)
+### Progress: 88 complete + 6 partial out of 352 total (27%)
 
-**Frontend UI: ~68% done** — all major screens built with mock data
+**Western track UI: ~68% done** — all major screens built with mock data
+**Vedic track: 0% done** — 74 new items across 8 feature areas
 **Backend/Infra: 0% done** — entirely pending, by design ("backend can be done later")

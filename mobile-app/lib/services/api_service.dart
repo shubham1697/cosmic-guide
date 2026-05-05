@@ -248,8 +248,12 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         return BirthChartData.fromJson(data);
+      } else {
+        debugPrint('getBirthChart failed: ${response.statusCode} ${response.body}');
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('getBirthChart error: $e');
+    }
     return null;
   }
 
@@ -266,5 +270,35 @@ class ApiService {
       }
     } catch (_) {}
     return [];
+  }
+
+  /// Fetch Vedic hub summary data. Returns null on failure.
+  static Future<VedicHomeSummaryData?> getVedicHomeSummary({
+    String? birthDate,
+    String? birthTime,
+    String? birthPlace,
+  }) async {
+    try {
+      final query = <String, String>{};
+      if (birthDate != null && birthDate.isNotEmpty) {
+        query['birthDate'] = birthDate;
+      }
+      if (birthTime != null && birthTime.isNotEmpty) {
+        query['birthTime'] = birthTime;
+      }
+      if (birthPlace != null && birthPlace.isNotEmpty) {
+        query['birthPlace'] = birthPlace;
+      }
+
+      final uri = Uri.parse(
+        '$_baseUrl/vedic/home-summary',
+      ).replace(queryParameters: query.isEmpty ? null : query);
+      final response = await http.get(uri).timeout(_timeout);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        return VedicHomeSummaryData.fromJson(data);
+      }
+    } catch (_) {}
+    return null;
   }
 }

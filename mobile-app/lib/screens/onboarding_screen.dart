@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../widgets/starry_background.dart';
+import '../widgets/city_autocomplete_field.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final Function(String name, String sign) onComplete;
@@ -17,17 +18,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _pageController = PageController();
   int _currentPage = 0;
   final _nameController = TextEditingController();
-  final _birthPlaceController = TextEditingController();
   DateTime? _birthDate;
   TimeOfDay? _birthTime;
   String? _selectedSign;
+  String? _selectedBirthPlace;
+  String _birthPlaceRawText = '';
+  bool _showBirthPlaceError = false;
   bool _isRevealing = false;
 
   @override
   void dispose() {
     _pageController.dispose();
     _nameController.dispose();
-    _birthPlaceController.dispose();
     super.dispose();
   }
 
@@ -116,6 +118,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Future<void> _completeOnboarding() async {
     if (_nameController.text.isEmpty || _selectedSign == null) return;
+    // Block if user typed a city but didn't confirm a selection from the list.
+    if (_birthPlaceRawText.isNotEmpty && _selectedBirthPlace == null) {
+      setState(() => _showBirthPlaceError = true);
+      return;
+    }
     setState(() => _isRevealing = true);
     await Future.delayed(const Duration(seconds: 2));
     final prefs = await SharedPreferences.getInstance();
@@ -134,8 +141,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}',
       );
     }
-    if (_birthPlaceController.text.isNotEmpty) {
-      await prefs.setString('birthPlace', _birthPlaceController.text);
+    if (_selectedBirthPlace != null && _selectedBirthPlace!.isNotEmpty) {
+      await prefs.setString('birthPlace', _selectedBirthPlace!);
     }
     widget.onComplete(_nameController.text, _selectedSign!);
   }
@@ -410,35 +417,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           ),
           const SizedBox(height: 16),
           // Birth Place Input
-          TextField(
-            controller: _birthPlaceController,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 18),
-            textAlign: TextAlign.center,
-            decoration: InputDecoration(
-              hintText: 'Enter birth place',
-              prefixIcon: const Icon(
-                Icons.location_on_outlined,
-                color: AppColors.accent,
-              ),
-              filled: true,
-              fillColor: AppColors.card,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(
-                  color: AppColors.textMuted.withAlpha(77),
-                ),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(
-                  color: AppColors.textMuted.withAlpha(77),
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: const BorderSide(color: AppColors.accent),
-              ),
-            ),
+          CityAutocompleteField(
+            hintText: 'Search birth city…',
+            showValidationError: _showBirthPlaceError,
+            onRawTextChanged: (text) =>
+                setState(() => _birthPlaceRawText = text),
+            onCitySelected: (city) {
+              setState(() {
+                _selectedBirthPlace = city;
+                if (city != null) _showBirthPlaceError = false;
+              });
+            },
           ),
           const SizedBox(height: 32),
           SizedBox(

@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
+import 'tarot_spread_screen.dart';
 
 class TarotScreen extends StatefulWidget {
   const TarotScreen({super.key});
@@ -127,6 +128,23 @@ class _TarotScreenState extends State<TarotScreen>
                   icon: const Icon(Icons.style),
                   label: Text(
                     _drawnCard == null ? 'Draw a Card' : 'Draw Again',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const TarotSpreadScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.view_column, color: AppColors.purple),
+                  label: const Text(
+                    'Three-Card Spread',
+                    style: TextStyle(color: AppColors.purple),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.purple),
                   ),
                 ),
               ],

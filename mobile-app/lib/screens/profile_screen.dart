@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../widgets/starry_background.dart';
+import '../widgets/city_autocomplete_field.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userSign;
@@ -635,8 +636,10 @@ class _EditProfileSheet extends StatefulWidget {
 
 class _EditProfileSheetState extends State<_EditProfileSheet> {
   late TextEditingController _nameController;
-  late TextEditingController _placeController;
   late String _selectedSign;
+  String? _selectedPlace;
+  String _placeRawText = '';
+  bool _showPlaceError = false;
   DateTime? _birthDate;
   TimeOfDay? _birthTime;
 
@@ -644,7 +647,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.initialName);
-    _placeController = TextEditingController(text: widget.initialBirthPlace);
+    _selectedPlace = widget.initialBirthPlace.isNotEmpty
+        ? widget.initialBirthPlace
+        : null;
+    _placeRawText = widget.initialBirthPlace;
     _selectedSign = widget.initialSign;
 
     if (widget.initialBirthDate.isNotEmpty) {
@@ -676,7 +682,6 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   @override
   void dispose() {
     _nameController.dispose();
-    _placeController.dispose();
     super.dispose();
   }
 
@@ -724,6 +729,11 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   void _save() {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
+    // Block if user typed a city but didn't confirm a selection.
+    if (_placeRawText.isNotEmpty && _selectedPlace == null) {
+      setState(() => _showPlaceError = true);
+      return;
+    }
     final birthDate = _birthDate != null
         ? '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}'
         : widget.initialBirthDate;
@@ -735,7 +745,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       _selectedSign,
       birthDate,
       birthTime,
-      _placeController.text.trim(),
+      _selectedPlace ?? '',
     );
     Navigator.pop(context);
   }
@@ -837,16 +847,19 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             const SizedBox(height: 20),
             _label('Birth Place'),
             const SizedBox(height: 8),
-            TextField(
-              controller: _placeController,
-              style: const TextStyle(color: AppColors.textPrimary),
-              decoration: const InputDecoration(
-                hintText: 'City, Country (optional)',
-                prefixIcon: Icon(
-                  Icons.location_on_outlined,
-                  color: AppColors.textMuted,
-                ),
-              ),
+            CityAutocompleteField(
+              initialValue: widget.initialBirthPlace.isNotEmpty
+                  ? widget.initialBirthPlace
+                  : null,
+              hintText: 'City, Country (optional)',
+              showValidationError: _showPlaceError,
+              onRawTextChanged: (text) => setState(() => _placeRawText = text),
+              onCitySelected: (city) {
+                setState(() {
+                  _selectedPlace = city;
+                  if (city != null) _showPlaceError = false;
+                });
+              },
             ),
             const SizedBox(height: 20),
             if (_birthDate == null) ...[

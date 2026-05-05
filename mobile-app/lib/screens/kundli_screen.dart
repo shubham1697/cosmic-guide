@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
+import '../widgets/city_autocomplete_field.dart';
 
 class KundliScreen extends StatefulWidget {
   final bool embedded;
@@ -21,8 +22,12 @@ class _KundliScreenState extends State<KundliScreen> {
   DateTime? _dob2;
   TimeOfDay? _time1;
   TimeOfDay? _time2;
-  final _placeController1 = TextEditingController();
-  final _placeController2 = TextEditingController();
+  String? _selectedPlace1;
+  String? _selectedPlace2;
+  String _placeRawText1 = '';
+  String _placeRawText2 = '';
+  bool _showPlaceError1 = false;
+  bool _showPlaceError2 = false;
   dynamic _result;
   bool _isCalculating = false;
 
@@ -30,8 +35,6 @@ class _KundliScreenState extends State<KundliScreen> {
   void dispose() {
     _nameController1.dispose();
     _nameController2.dispose();
-    _placeController1.dispose();
-    _placeController2.dispose();
     super.dispose();
   }
 
@@ -99,17 +102,13 @@ class _KundliScreenState extends State<KundliScreen> {
       birthTime1: _time1 != null
           ? '${_time1!.hour}:${_time1!.minute.toString().padLeft(2, '0')}'
           : null,
-      birthPlace1: _placeController1.text.isNotEmpty
-          ? _placeController1.text
-          : null,
+      birthPlace1: _selectedPlace1,
       name2: _nameController2.text,
       birthDate2: DateFormat('yyyy-MM-dd').format(_dob2!),
       birthTime2: _time2 != null
           ? '${_time2!.hour}:${_time2!.minute.toString().padLeft(2, '0')}'
           : null,
-      birthPlace2: _placeController2.text.isNotEmpty
-          ? _placeController2.text
-          : null,
+      birthPlace2: _selectedPlace2,
     );
     if (mounted) {
       setState(() {
@@ -124,8 +123,8 @@ class _KundliScreenState extends State<KundliScreen> {
       _nameController2.text.isNotEmpty &&
       _dob1 != null &&
       _dob2 != null &&
-      _placeController1.text.isNotEmpty &&
-      _placeController2.text.isNotEmpty;
+      _selectedPlace1 != null &&
+      _selectedPlace2 != null;
 
   Widget _buildContent(BuildContext context) {
     return SingleChildScrollView(
@@ -147,21 +146,35 @@ class _KundliScreenState extends State<KundliScreen> {
           ),
           const SizedBox(height: 32),
           _buildPersonForm(
-            'Person 1',
-            _nameController1,
-            _dob1,
-            _time1,
-            _placeController1,
-            true,
+            label: 'Person 1',
+            nameController: _nameController1,
+            dob: _dob1,
+            time: _time1,
+            selectedPlace: _selectedPlace1,
+            placeRawText: _placeRawText1,
+            showPlaceError: _showPlaceError1,
+            onCitySelected: (city) => setState(() {
+              _selectedPlace1 = city;
+              if (city != null) _showPlaceError1 = false;
+            }),
+            onRawTextChanged: (text) => setState(() => _placeRawText1 = text),
+            isFirst: true,
           ),
           const SizedBox(height: 20),
           _buildPersonForm(
-            'Person 2',
-            _nameController2,
-            _dob2,
-            _time2,
-            _placeController2,
-            false,
+            label: 'Person 2',
+            nameController: _nameController2,
+            dob: _dob2,
+            time: _time2,
+            selectedPlace: _selectedPlace2,
+            placeRawText: _placeRawText2,
+            showPlaceError: _showPlaceError2,
+            onCitySelected: (city) => setState(() {
+              _selectedPlace2 = city;
+              if (city != null) _showPlaceError2 = false;
+            }),
+            onRawTextChanged: (text) => setState(() => _placeRawText2 = text),
+            isFirst: false,
           ),
           const SizedBox(height: 32),
           SizedBox(
@@ -207,14 +220,18 @@ class _KundliScreenState extends State<KundliScreen> {
     );
   }
 
-  Widget _buildPersonForm(
-    String label,
-    TextEditingController nameController,
-    DateTime? dob,
-    TimeOfDay? time,
-    TextEditingController placeController,
-    bool isFirst,
-  ) {
+  Widget _buildPersonForm({
+    required String label,
+    required TextEditingController nameController,
+    required DateTime? dob,
+    required TimeOfDay? time,
+    required String? selectedPlace,
+    required String placeRawText,
+    required bool showPlaceError,
+    required ValueChanged<String?> onCitySelected,
+    required ValueChanged<String> onRawTextChanged,
+    required bool isFirst,
+  }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -324,14 +341,11 @@ class _KundliScreenState extends State<KundliScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          TextField(
-            controller: placeController,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(
-              hintText: 'Birth Place',
-              prefixIcon: Icon(Icons.location_on, color: AppColors.textMuted),
-            ),
-            onChanged: (_) => setState(() {}),
+          CityAutocompleteField(
+            hintText: 'Birth Place',
+            showValidationError: showPlaceError,
+            onRawTextChanged: onRawTextChanged,
+            onCitySelected: onCitySelected,
           ),
         ],
       ),
