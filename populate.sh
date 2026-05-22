@@ -12,8 +12,10 @@
 #   ./populate.sh -S           # seed static data (no LLM)
 #   ./populate.sh -F           # force regenerate
 #   ./populate.sh -d 2026-04-28  # specific date
+#   ./populate.sh -D 7         # populate next 7 days
 #   ./populate.sh --status     # check DB status
 #   ./populate.sh -h -f -F     # horoscopes + fortunes, force
+#   ./populate.sh -h -f -D 3   # horoscopes + fortunes for next 3 days
 #
 
 set -euo pipefail
@@ -36,6 +38,7 @@ Flags:
   -S    Seed static data only (no LLM needed)
   -F    Force regenerate even if data exists
   -d    Target date (YYYY-MM-DD), default: today
+  -D    Number of days to populate (starting from -d or today)
   --status  Print DB content status and exit
   --help    Show this help
 
@@ -47,6 +50,8 @@ Examples:
   ./populate.sh -h -f           # horoscopes + fortunes
   ./populate.sh -h -F           # horoscopes, force regenerate
   ./populate.sh -d 2026-04-28   # all content for specific date
+  ./populate.sh -D 7            # populate next 7 days
+  ./populate.sh -h -f -D 3      # horoscopes + fortunes for next 3 days
   ./populate.sh --status        # check what's in the DB
 EOF
   exit 0
@@ -57,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --help)  show_help ;;
     --status) ARGS+=(--status); shift ;;
     -d)      ARGS+=(--date "$2"); shift 2 ;;
+    -D)      ARGS+=(--days "$2"); shift 2 ;;
     -*)
       # Process each character in combined short flags (e.g. -hfF)
       flags="${1#-}"

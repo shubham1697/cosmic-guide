@@ -132,6 +132,16 @@ def content_status(target_date: str = None):
         db.close()
 
 
+# ── Admin: clear in-memory caches ────────────────────────────────────────────
+@app.post("/admin/clear-cache", tags=["Admin"])
+def clear_caches():
+    """Clear all in-memory caches so the backend re-fetches from DB."""
+    from services.horoscope_service import clear_horoscope_cache
+    clear_horoscope_cache()
+    logger.info("All in-memory caches cleared via admin endpoint")
+    return {"status": "ok", "message": "All caches cleared"}
+
+
 # ── Admin: refresh all daily AI content ──────────────────────────────────────
 @app.post("/admin/refresh-daily", tags=["Admin"])
 def refresh_daily_content(target_date: str = None):

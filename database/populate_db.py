@@ -13,13 +13,14 @@ Connects to Ollama at 192.168.29.159 and generates content one item at a time:
 Usage:
     python populate_db.py                      # run everything
     python populate_db.py --horoscopes         # horoscopes only
-    python populate_db.py --tarot              # tarot cards only
     python populate_db.py --fortunes           # fortune pool only
     python populate_db.py --compatibility      # compatibility only
     python populate_db.py --stories            # stories only
     python populate_db.py --vedic              # Vedic AI reference content only
     python populate_db.py --force              # regenerate even if data exists
     python populate_db.py --date 2026-04-28    # generate for a specific date
+    python populate_db.py --days 7             # populate next 7 days from today
+    python populate_db.py --horoscopes --days 3  # horoscopes for next 3 days
 """
 
 import sys
@@ -29,7 +30,7 @@ import argparse
 import http.client
 import time
 import re
-from datetime import date
+from datetime import date, timedelta
 
 # Ensure the project root is on sys.path so `database.*` imports work
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -93,13 +94,22 @@ def _ollama_generate(prompt: str, expect_json: bool = True,
             headers={"Content-Type": "application/json"},
         )
         resp = conn.getresponse()
+        if resp.status != 200:
+            body = resp.read().decode(errors="replace")[:300]
+            log.error("Ollama HTTP %d: %s", resp.status, body)
+            conn.close()
+            # Signal unrecoverable errors so callers can abort early
+            if "more system memory" in body or "not found" in body:
+                raise RuntimeError(f"Ollama fatal: {body[:200]}")
+            return None
         parts = []
         for raw_line in resp:
             raw_line = raw_line.strip()
             if not raw_line:
                 continue
             chunk = json.loads(raw_line)
-            parts.append(chunk.get("message", {}).get("content", ""))
+            content = chunk.get("message", {}).get("content", "")
+            parts.append(content)
             if chunk.get("done"):
                 break
         conn.close()
@@ -157,6 +167,34 @@ def _parse_json(raw: str, log_error: bool = True) -> dict | list | None:
             out.append(ch)
         return "".join(out)
 
+    def _repair_single_quotes(text: str) -> str:
+        """
+        Replace single-quoted strings with double-quoted strings in JSON arrays/objects.
+        Handles mixed quote styles from LLM output, including apostrophes in text.
+        """
+        import ast
+        try:
+            result = ast.literal_eval(text)
+            return json.dumps(result)
+        except Exception:
+            pass
+        # Fallback: split on delimiter patterns for arrays of single-quoted strings
+        stripped = text.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            inner = stripped[1:-1].strip()
+            # Remove wrapping double-quotes if the LLM wrapped everything in one string
+            if inner.startswith('"') and inner.endswith('"'):
+                inner = inner[1:-1]
+            # Split on ',\n  ' or "',\n  '" patterns (item boundaries)
+            parts = re.split(r"'\s*,\s*[\n\r]*\s*'", inner)
+            if len(parts) >= 2:
+                # Clean leading/trailing quotes and whitespace from each part
+                cleaned = [p.strip().strip("'\"").strip() for p in parts]
+                cleaned = [c for c in cleaned if c]
+                if cleaned:
+                    return json.dumps(cleaned)
+        return text
+
     def _repair_common_json_issues(text: str) -> str:
         """
         Repair frequent LLM JSON mistakes:
@@ -193,6 +231,14 @@ def _parse_json(raw: str, log_error: bool = True) -> dict | list | None:
         return json.loads(raw)
     except json.JSONDecodeError:
         fixed = _escape_controls_inside_strings(raw)
+        fixed = _repair_common_json_issues(fixed)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        # Try single-quote repair (common LLM mistake)
+        fixed = _repair_single_quotes(raw)
+        fixed = _escape_controls_inside_strings(fixed)
         fixed = _repair_common_json_issues(fixed)
         try:
             return json.loads(fixed)
@@ -299,10 +345,17 @@ def populate_horoscopes(db, target_date: date, force: bool = False) -> int:
             '"mood":"one positive descriptive word"}'
         )
 
-        raw = _ollama_generate(prompt)
+        try:
+            raw = _ollama_generate(prompt)
+        except RuntimeError as exc:
+            log.error("  [ABORT] Ollama fatal error — stopping: %s", exc)
+            break
+        if not raw:
+            log.error("  [FAIL] %s — empty Ollama response", sign)
+            continue
         data = _parse_json(raw)
         if not isinstance(data, dict):
-            log.error("  [FAIL] %s — bad response", sign)
+            log.error("  [FAIL] %s — bad response | raw[:200]: %s", sign, raw[:200])
             continue
 
         data.setdefault("zodiac_sign", sign)
@@ -393,7 +446,11 @@ def populate_fortunes(db, target_date: date, force: bool = False) -> int:
                 '"Trust the celestial rhythm guiding your heart."]'
             )
 
-            raw = _ollama_generate(prompt, max_tokens=300)
+            try:
+                raw = _ollama_generate(prompt, max_tokens=300)
+            except RuntimeError as exc:
+                log.error("  [ABORT] Ollama fatal error — stopping: %s", exc)
+                return generated
             data = _parse_json(raw)
 
             if isinstance(data, dict) and any(isinstance(v, list) for v in data.values()):
@@ -673,10 +730,13 @@ def main():
     parser.add_argument("--force", action="store_true", help="Regenerate even if data exists")
     parser.add_argument("--date", type=str, default=None,
                         help="Target date (YYYY-MM-DD), defaults to today")
+    parser.add_argument("--days", type=int, default=1,
+                        help="Number of days to populate (starting from --date or today)")
     parser.add_argument("--status", action="store_true", help="Print DB content status and exit")
     args = parser.parse_args()
 
     target_date = date.fromisoformat(args.date) if args.date else date.today()
+    num_days = max(1, args.days)
     run_all = not any([args.horoscopes, args.tarot, args.fortunes,
                        args.compatibility, args.stories, args.vedic, args.seed, args.status])
 
@@ -705,26 +765,34 @@ def main():
         db.close()
         sys.exit(1)
 
-    log.info("Target date: %s  Model: %s  Force: %s",
-             target_date.isoformat(), OLLAMA_MODEL, args.force)
+    log.info("Target date: %s  Days: %d  Model: %s  Force: %s",
+             target_date.isoformat(), num_days, OLLAMA_MODEL, args.force)
     log.info("=" * 60)
 
     t0 = time.perf_counter()
 
     try:
-        if run_all or args.horoscopes:
-            log.info("━━━ HOROSCOPES ━━━")
-            populate_horoscopes(db, target_date, args.force)
-            log.info("")
+        # Date-sensitive content: loop over each day
+        dates_to_populate = [target_date + timedelta(days=i) for i in range(num_days)]
 
+        for day in dates_to_populate:
+            if num_days > 1:
+                log.info("━━━ DAY: %s ━━━", day.isoformat())
+
+            if run_all or args.horoscopes:
+                log.info("━━━ HOROSCOPES (%s) ━━━", day.isoformat())
+                populate_horoscopes(db, day, args.force)
+                log.info("")
+
+            if run_all or args.fortunes:
+                log.info("━━━ FORTUNE POOL (%s) ━━━", day.isoformat())
+                populate_fortunes(db, day, args.force)
+                log.info("")
+
+        # Non-date-sensitive content: run once
         if run_all or args.tarot:
             log.info("━━━ TAROT CARDS ━━━")
             populate_tarot(db, args.force)
-            log.info("")
-
-        if run_all or args.fortunes:
-            log.info("━━━ FORTUNE POOL ━━━")
-            populate_fortunes(db, target_date, args.force)
             log.info("")
 
         if run_all or args.compatibility:

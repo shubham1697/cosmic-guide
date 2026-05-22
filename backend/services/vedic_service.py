@@ -109,7 +109,7 @@ def _karana_name(lunar_phase_deg: float) -> str:
     karana_index = int(lunar_phase_deg / 6) + 1
     if karana_index in KARANA_FIXED:
         return KARANA_FIXED[karana_index]
-    seq_index = (karana_index - 1) % len(KARANA_SEQUENCE)
+    seq_index = (karana_index - 2) % len(KARANA_SEQUENCE)
     return KARANA_SEQUENCE[seq_index]
 
 

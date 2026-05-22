@@ -47,10 +47,10 @@ KARANA_SEQUENCE = [
 ]
 
 KARANA_FIXED = {
-    57: "Shakuni",
-    58: "Chatushpada",
-    59: "Naga",
-    60: "Kimstughna",
+    1: "Kimstughna",
+    58: "Shakuni",
+    59: "Chatushpada",
+    60: "Naga",
 }
 
 VARA_NAMES = [
@@ -133,6 +133,9 @@ PLANET_FASTING_DAYS = {
 }
 
 HINDU_MONTH_WINDOWS = [
+    ((1, 14), "Pausha"),
+    ((2, 13), "Magha"),
+    ((3, 14), "Phalguna"),
     ((4, 14), "Chaitra"),
     ((5, 15), "Vaishakha"),
     ((6, 15), "Jyeshtha"),
@@ -142,9 +145,6 @@ HINDU_MONTH_WINDOWS = [
     ((10, 18), "Ashwin"),
     ((11, 16), "Kartika"),
     ((12, 16), "Margashirsha"),
-    ((1, 14), "Pausha"),
-    ((2, 13), "Magha"),
-    ((3, 14), "Phalguna"),
 ]
 
 FESTIVAL_DATES = [

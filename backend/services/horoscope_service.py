@@ -75,7 +75,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
                     "career": cached.career,
                     "health": cached.health,
                     "overall_score": cached.overall_score,
-                    "lucky_number": cached.lucky_number,
+                    "lucky_number": str(cached.lucky_number),
                     "lucky_color": cached.lucky_color,
                     "mood": cached.mood,
                 }
@@ -88,9 +88,7 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
             logger.warning("get_horoscope  DB query failed (%s)", exc)
             log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", error=exc, elapsed_ms=0)
             logger.warning("get_horoscope  source=mock  sign=%s  date=%s  reason=db_fetch_failed", zodiac_sign, today_str)
-            mock_result = _mock_horoscope(zodiac_sign, today_str)
-            _horoscope_cache[cache_key] = mock_result
-            return mock_result
+            return _mock_horoscope(zodiac_sign, today_str)
 
     # ── 3. AI generation ─────────────────────────────────────────────────────
     try:
@@ -134,6 +132,10 @@ def get_horoscope(zodiac_sign: str, db=None) -> dict:
         logger.warning("get_horoscope  AI exception (%s)  sign=%s", exc, zodiac_sign)
 
     logger.warning("get_horoscope  source=mock  sign=%s  date=%s  reason=ai_unavailable", zodiac_sign, today_str)
-    mock_result = _mock_horoscope(zodiac_sign, today_str)
-    _horoscope_cache[cache_key] = mock_result
-    return mock_result
+    return _mock_horoscope(zodiac_sign, today_str)
+
+
+def clear_horoscope_cache():
+    """Clear the in-memory horoscope cache (call after DB repopulation)."""
+    _horoscope_cache.clear()
+    logger.info("Horoscope in-memory cache cleared")

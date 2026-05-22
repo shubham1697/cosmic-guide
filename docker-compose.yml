@@ -49,7 +49,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://cosmicguide:cosmicguide@db:5432/cosmicguide
       - OLLAMA_HOST=192.168.29.159:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e4b}
       - LOG_LEVEL=INFO
     profiles:
       - populate

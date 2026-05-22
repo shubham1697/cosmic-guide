@@ -633,13 +633,16 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
     List<_VedicFeature> features,
     VedicHomeSummaryData summary,
   ) {
-    return Row(
-      children: [
-        for (int i = 0; i < features.length; i++) ...[
-          if (i > 0) const SizedBox(width: 12),
-          Expanded(child: _buildFeatureCard(context, features[i], summary)),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (int i = 0; i < features.length; i++) ...[
+            if (i > 0) const SizedBox(width: 12),
+            Expanded(child: _buildFeatureCard(context, features[i], summary)),
+          ],
         ],
-      ],
+      ),
     );
   }
 

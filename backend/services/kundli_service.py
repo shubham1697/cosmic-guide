@@ -50,15 +50,14 @@ def _vashya_score(rashi1: int, rashi2: int) -> int:
 def _tara_score(nak1: int, nak2: int) -> int:
     """Tara Koota (max 3). Based on Nakshatra distance."""
     diff = (nak2 - nak1) % 27
-    tara = (diff % 9)
-    # Auspicious taras: 1(Janma), 3(Vipat), 5(Pratyak), 7(Naidhana) are inauspicious
-    # Score 3 if tara is even-numbered remainder (auspicious), else reduce
-    if tara in (0, 2, 4, 6, 8):
-        return 3
-    elif tara in (1, 3):
-        return 1
-    else:
+    tara = diff % 9
+    # 0-indexed tara positions:
+    # 0=Janma, 1=Sampat, 2=Vipat, 3=Kshema, 4=Pratyari,
+    # 5=Sadhana, 6=Naidhana, 7=Mitra, 8=Parama Mitra
+    # Inauspicious: 2(Vipat), 4(Pratyari), 6(Naidhana)
+    if tara in (2, 4, 6):
         return 0
+    return 3
 
 
 def _yoni_score(nak1: int, nak2: int) -> int:
@@ -100,10 +99,11 @@ def _gana_score(nak1: int, nak2: int) -> int:
 def _bhakoot_score(rashi1: int, rashi2: int) -> int:
     """Bhakoot Koota (max 7). Rashi relationship."""
     diff = (rashi2 - rashi1) % 12
-    # Inauspicious: 2/12, 5/9, 6/8
-    bad_pairs = {2, 10, 5, 7, 6, 8}  # modular complements: 2↔10, 5↔7, 6↔8 (but 6/8 means diff=6 or diff=8, etc.)
-    # 2/12 -> diff=2 or diff=10;  5/9 -> diff=5 or diff=7;  6/8 -> diff=6 or diff=8
-    if diff in {2, 10, 5, 7, 6, 8}:
+    # Inauspicious house pairs (0-based diff where diff=0 means same sign):
+    # 2/12 → 2nd house: diff=1, 12th house: diff=11
+    # 5/9  → 5th house: diff=4, 9th house: diff=8
+    # 6/8  → 6th house: diff=5, 8th house: diff=7
+    if diff in {1, 11, 4, 8, 5, 7}:
         return 0
     return 7
 

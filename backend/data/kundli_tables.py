@@ -6,7 +6,7 @@ VARNA = [
 ]
 
 # Vashya groups: 0=Chatushpada, 1=Manava, 2=Jalachara, 3=Vanachara, 4=Keeta
-VASHYA_SIGN = [0, 0, 1, 2, 0, 1, 1, 4, 0, 0, 1, 1]  # by rashi (0-11)
+VASHYA_SIGN = [0, 0, 1, 2, 0, 1, 1, 4, 0, 0, 1, 2]  # by rashi (0-11)
 
 # Yoni (animal pairs): 14 animals
 YONI_ANIMAL = [
