@@ -159,9 +159,16 @@ python database/populate_db.py --horoscopes       # just horoscopes
 | Variable       | Default                                                    | Description                     |
 |----------------|------------------------------------------------------------|---------------------------------|
 | `DATABASE_URL` | `postgresql://cosmicguide:cosmicguide@localhost:5432/cosmicguide` | PostgreSQL connection string    |
+| `AI_PROVIDER`  | `auto`                                                     | LLM backend: `auto`/`gemini`/`ollama`/`iphone` |
+| `OLLAMA_BASE_URL` | `http://192.168.29.159:11434`                           | Ollama base URL (overrides `OLLAMA_HOST`) |
 | `OLLAMA_HOST`  | `192.168.29.159:11434`                                     | Ollama server `host:port`       |
-| `OLLAMA_MODEL` | `mistral:latest`                                           | Ollama model to use             |
+| `OLLAMA_MODEL` | `gemma3:4b`                                                | Ollama model to use             |
 | `OLLAMA_TIMEOUT` | `600`                                                    | HTTP timeout in seconds         |
+| `IPHONE_LLM_BASE_URL` | `http://192.168.29.162:8080/v1`                     | iPhone LLM OpenAI-compatible endpoint |
+| `IPHONE_LLM_MODEL` | `base`                                                 | iPhone LLM model name           |
+| `IPHONE_LLM_API_KEY` | `not-needed`                                         | iPhone LLM API key (if required) |
+| `GEMINI_API_KEY` | _(empty)_                                                | Google Gemini API key (enables Gemini) |
+| `AI_MODEL`     | `gemini-2.5-flash-lite`                                    | Gemini model name               |
 | `LOG_LEVEL`    | `INFO`                                                     | Logging level (`DEBUG`/`INFO`/`WARNING`) |
 
 ---

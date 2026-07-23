@@ -7,7 +7,7 @@ birth date, time, and location.
 """
 
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 import swisseph as swe
@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from logger import get_logger
 from data.zodiac_data import ZODIAC_SIGNS, ZODIAC_SYMBOLS
-from data.astro_constants import PLANET_IDS, PLANET_SYMBOLS, NAKSHATRAS, NAKSHATRA_LORDS
+from data.astro_constants import PLANET_IDS, PLANET_SYMBOLS, NAKSHATRAS, NAKSHATRA_LORDS, VEDIC_GRAHAS
 
 logger = get_logger(__name__)
 
@@ -107,6 +107,7 @@ def calculate_birth_chart(
     birth_date: str,
     birth_time: Optional[str] = None,
     birth_place: Optional[str] = None,
+    sidereal: bool = False,
 ) -> dict:
     """
     Calculate a full birth chart.
@@ -115,6 +116,10 @@ def calculate_birth_chart(
         birth_date: "YYYY-MM-DD"
         birth_time: "HH:MM" (24h). Defaults to 12:00 if not provided.
         birth_place: City/place name. Defaults to 0°N 0°E if not provided.
+        sidereal: When True, produces a Vedic (Jyotish) chart using the
+            sidereal zodiac with Lahiri ayanamsa, the nine grahas
+            (Sun–Saturn + Rahu/Ketu, no outer planets), and whole-sign
+            houses. When False, produces a tropical (Western) chart.
 
     Returns:
         Dict with planets, houses, big3, nakshatras, aspects, etc.
@@ -139,11 +144,13 @@ def calculate_birth_chart(
     # Geocode birth place
     lat, lon = 0.0, 0.0
     tz_name = "UTC"
+    geocoded = False
     if birth_place:
         coords = geocode_place(birth_place)
         if coords:
             lat, lon = coords
             tz_name = _get_timezone(lat, lon)
+            geocoded = True
         else:
             logger.warning("Could not geocode '%s', using 0°N 0°E", birth_place)
 
@@ -158,15 +165,32 @@ def calculate_birth_chart(
 
     jd = _to_julian_day(utc_dt)
 
+    # Sidereal (Vedic) mode uses the Lahiri ayanamsa — the Indian government
+    # standard for Jyotish. The FLG_SIDEREAL flag then shifts every longitude
+    # from the tropical to the sidereal zodiac.
+    calc_flags = swe.FLG_SWIEPH | swe.FLG_SPEED
+    if sidereal:
+        swe.set_sid_mode(swe.SIDM_LAHIRI, 0, 0)
+        calc_flags |= swe.FLG_SIDEREAL
+
     logger.info(
-        "Calculating birth chart: date=%s time=%s place=%s lat=%.4f lon=%.4f jd=%.6f",
+        "Calculating %s birth chart: date=%s time=%s place=%s lat=%.4f lon=%.4f jd=%.6f",
+        "sidereal (Vedic)" if sidereal else "tropical",
         birth_date, birth_time or "12:00", birth_place or "N/A", lat, lon, jd,
     )
 
     # ── Calculate planetary positions ────────────────────────────────────────
+    # Vedic charts use the seven visible grahas; the two lunar nodes (Rahu/Ketu)
+    # are added below. Western charts additionally include the outer planets.
+    planet_ids = (
+        {name: PLANET_IDS[name] for name in VEDIC_GRAHAS}
+        if sidereal
+        else PLANET_IDS
+    )
+
     planets = []
-    for name, planet_id in PLANET_IDS.items():
-        result, _flags = swe.calc_ut(jd, planet_id)
+    for name, planet_id in planet_ids.items():
+        result, _flags = swe.calc_ut(jd, planet_id, calc_flags)
         longitude = result[0]  # ecliptic longitude
         latitude = result[1]
         speed = result[3]       # daily speed (negative = retrograde)
@@ -188,12 +212,64 @@ def calculate_birth_chart(
             "is_retrograde": is_retrograde,
         })
 
-    # ── Calculate house cusps (Placidus) ─────────────────────────────────────
-    has_houses = birth_time is not None and birth_place is not None
+    # ── Lunar nodes: Rahu (North) & Ketu (South) — mandatory in Jyotish ───────
+    if sidereal:
+        node_res, _ = swe.calc_ut(jd, swe.MEAN_NODE, calc_flags)
+        rahu_lon = node_res[0] % 360
+        ketu_lon = (rahu_lon + 180) % 360
+        for node_name, node_lon in (("Rahu", rahu_lon), ("Ketu", ketu_lon)):
+            deg_in_sign = _degree_in_sign(node_lon)
+            planets.append({
+                "name": node_name,
+                "symbol": PLANET_SYMBOLS[node_name],
+                "longitude": round(node_lon, 4),
+                "latitude": 0.0,
+                "speed": round(node_res[3], 4),
+                "sign": _sign_from_longitude(node_lon),
+                "sign_symbol": _sign_symbol_from_longitude(node_lon),
+                "degree_in_sign": round(deg_in_sign, 2),
+                "degree_display": _format_dms(deg_in_sign),
+                "is_retrograde": True,  # nodes are always retrograde
+            })
+
+    # ── Calculate houses ─────────────────────────────────────────────────────
+    # Houses/ascendant need both a birth time and successfully geocoded
+    # coordinates. A place that failed to geocode leaves lat/lon at 0°N 0°E,
+    # which would otherwise yield a bogus (but real-looking) ascendant.
+    has_houses = birth_time is not None and geocoded
     houses = []
     ascendant_lon = None
 
-    if has_houses:
+    if sidereal:
+        # Vedic rasi chart: whole-sign houses. The ascendant's entire sign is
+        # the 1st house (0°–30°), the next sign the 2nd, and so on.
+        if has_houses:
+            try:
+                _cusps, ascmc = swe.houses_ex(jd, lat, lon, b'W', swe.FLG_SIDEREAL)
+                ascendant_lon = ascmc[0]
+                mc_lon = ascmc[1]
+            except Exception as e:
+                logger.warning("Sidereal houses failed (%s); estimating from Moon", e)
+                has_houses = False
+
+        if not has_houses:
+            # Without an accurate birth time the Lagna cannot be fixed; fall
+            # back to the sidereal Moon's sign (Chandra Lagna) as a proxy.
+            moon_lon = next(p["longitude"] for p in planets if p["name"] == "Moon")
+            ascendant_lon = float((int(moon_lon / 30) % 12) * 30)
+            mc_lon = (ascendant_lon + 270) % 360
+
+        asc_sign_index = int(ascendant_lon / 30) % 12
+        for i in range(12):
+            cusp_lon = float(((asc_sign_index + i) % 12) * 30)
+            houses.append({
+                "house": i + 1,
+                "cusp_longitude": round(cusp_lon, 4),
+                "sign": _sign_from_longitude(cusp_lon),
+                "degree_in_sign": 0.0,
+                "degree_display": _format_dms(0.0),
+            })
+    elif has_houses:
         cusps, asc_mc = swe.houses(jd, lat, lon, b'P')  # Placidus
         ascendant_lon = asc_mc[0]
         mc_lon = asc_mc[1]
@@ -238,8 +314,16 @@ def calculate_birth_chart(
         },
     }
 
-    # ── Moon nakshatra (Vedic) ───────────────────────────────────────────────
-    moon_nakshatra = _nakshatra_from_longitude(moon_data["longitude"])
+    # ── Moon nakshatra (always sidereal) ──────────────────────────────────
+    # Nakshatras are defined on the sidereal zodiac. The Vedic path already
+    # produced a sidereal Moon; for the tropical (Western) path we subtract the
+    # Lahiri ayanamsa so the nakshatra is astronomically correct.
+    if sidereal:
+        moon_sidereal_lon = moon_data["longitude"]
+    else:
+        swe.set_sid_mode(swe.SIDM_LAHIRI, 0, 0)
+        moon_sidereal_lon = (moon_data["longitude"] - swe.get_ayanamsa_ut(jd)) % 360
+    moon_nakshatra = _nakshatra_from_longitude(moon_sidereal_lon)
 
     # ── Aspects ──────────────────────────────────────────────────────────────
     aspects = _calculate_aspects(planets)
@@ -326,12 +410,12 @@ def _calculate_aspects(planets: list[dict]) -> list[dict]:
 
 def calculate_current_transits() -> list[dict]:
     """Calculate current planetary positions (transits for today)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     jd = _to_julian_day(now)
 
     transits = []
     for name, planet_id in PLANET_IDS.items():
-        result, _flags = swe.calc_ut(jd, planet_id)
+        result, _flags = swe.calc_ut(jd, planet_id, swe.FLG_SWIEPH | swe.FLG_SPEED)
         longitude = result[0]
         speed = result[3]
 

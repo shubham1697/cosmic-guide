@@ -19,3 +19,6 @@ backend/venv/
 backend/*.db
 backend/*.log
 *.log
+
+# Audit logs (including rotated files audit.log.1, audit.log.2, …)
+backend/logs/

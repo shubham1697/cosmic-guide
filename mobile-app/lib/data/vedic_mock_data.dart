@@ -17,7 +17,7 @@ const vedicHomeMockData = VedicHomeSummaryData(
     yoga: 'Sukarma',
     karana: 'Bava',
     insight:
-        'Today supports steady progress, sacred routine, and decisions taken with patience rather than haste.',
+        'Ruled by Jupiter, today leans toward wisdom, growth, and auspicious effort. The waxing Moon favours new beginnings, growth, and outward momentum.',
   ),
   calendar: VedicCalendarData(
     monthName: 'Vaishakha',
@@ -29,10 +29,20 @@ const vedicHomeMockData = VedicHomeSummaryData(
   ),
   muhurta: MuhurtaSummaryData(
     label: 'Abhijit Muhurta',
-    startsAt: '12:06 PM',
-    endsAt: '12:54 PM',
+    startsAt: '11:57 AM',
+    endsAt: '12:48 PM',
     note:
         'Use your strongest window for high-intent actions and keep routine work outside it.',
+  ),
+  timings: DailyTimingsData(
+    sunrise: '5:42 AM',
+    sunset: '7:01 PM',
+    dayLength: '13h 19m',
+    abhijit: '11:57 AM – 12:48 PM',
+    brahmaMuhurta: '4:06 AM – 4:54 AM',
+    rahuKaal: '1:57 PM – 3:37 PM',
+    yamaganda: '5:42 AM – 7:22 AM',
+    gulika: '9:02 AM – 10:42 AM',
   ),
   kundli: KundliSummaryData(
     lagna: 'Tula',

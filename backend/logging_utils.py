@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 from functools import wraps
 
 from logger import get_logger
+from audit import audit_outbound
 
 logger = get_logger(__name__)
 
@@ -74,6 +75,25 @@ def log_external_api_call(
             "→ %s %s %s | %.0fms | req=%s | resp=%s",
             service_name, method, endpoint, elapsed_ms, req_preview, resp_preview,
         )
+
+    # Structured audit trail — records the full destination and the response,
+    # correlated to the inbound request via the shared context id.
+    resp_full = response_text if response_text is not None else (
+        json.dumps(response_data, default=str) if response_data else None
+    )
+    audit_outbound(
+        service=service_name,
+        method=method,
+        url=endpoint,
+        status_code=status_code,
+        duration_ms=elapsed_ms,
+        request_summary=truncate(request_data, 500) if request_data else None,
+        response_preview=(
+            resp_full[:2000] + ("…" if len(resp_full) > 2000 else "")
+        ) if resp_full else None,
+        response_chars=len(resp_full) if resp_full is not None else None,
+        error=f"{type(error).__name__}: {error}" if error else None,
+    )
 
 
 def log_db_query(

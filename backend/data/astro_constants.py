@@ -18,8 +18,14 @@ PLANET_IDS = {
 PLANET_SYMBOLS = {
     "Sun": "☉", "Moon": "☽", "Mercury": "☿", "Venus": "♀",
     "Mars": "♂", "Jupiter": "♃", "Saturn": "♄", "Uranus": "♅",
-    "Neptune": "♆", "Pluto": "♇",
+    "Neptune": "♆", "Pluto": "♇", "Rahu": "☊", "Ketu": "☋",
 }
+
+# Traditional nine grahas of Vedic astrology (Navagraha).
+# Outer planets (Uranus/Neptune/Pluto) are NOT used in classical Jyotish.
+VEDIC_GRAHAS = [
+    "Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus", "Saturn",
+]
 
 # 27 Nakshatras — each spans 13°20' (13.3333°)
 NAKSHATRAS = [

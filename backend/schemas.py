@@ -279,6 +279,19 @@ class MuhurtaSummary(CamelModel):
     note: str
 
 
+class DailyTimingsSummary(CamelModel):
+    """Location-aware daily timings derived from real sunrise/sunset."""
+
+    sunrise: str
+    sunset: str
+    day_length: str
+    abhijit: str
+    brahma_muhurta: str
+    rahu_kaal: str
+    yamaganda: str
+    gulika: str
+
+
 class KundliHomeSummary(CamelModel):
     lagna: str
     moon_sign: str
@@ -312,6 +325,7 @@ class VedicHomeSummaryResponse(CamelModel):
     panchang: PanchangSummary
     calendar: VedicCalendarSummary
     muhurta: MuhurtaSummary
+    timings: DailyTimingsSummary
     kundli: Optional[KundliHomeSummary] = None
     dasha: Optional[DashaHomeSummary] = None
     dosha: Optional[DoshaHomeSummary] = None

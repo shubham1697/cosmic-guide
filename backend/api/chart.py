@@ -16,6 +16,22 @@ def get_birth_chart(request: BirthChartRequest):
     return chart
 
 
+@router.post("/vedic", response_model=BirthChartResponse)
+def get_vedic_chart(request: BirthChartRequest):
+    """Calculate a sidereal Vedic (Jyotish) birth chart.
+
+    Uses the Lahiri ayanamsa, the nine grahas (including Rahu/Ketu),
+    and whole-sign houses — the basis of the North/South Indian kundli.
+    """
+    chart = calculate_birth_chart(
+        birth_date=request.birth_date,
+        birth_time=request.birth_time,
+        birth_place=request.birth_place,
+        sidereal=True,
+    )
+    return chart
+
+
 @router.get("/transits", response_model=TransitsResponse)
 def get_current_transits():
     """Get current planetary positions (today's transits)."""

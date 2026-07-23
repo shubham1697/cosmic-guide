@@ -159,16 +159,20 @@ def calculate_kundli(person1: dict, person2: dict) -> dict:
         person1.get("name", "?"), person2.get("name", "?"),
     )
 
-    # Calculate birth charts for both persons
+    # Calculate birth charts for both persons.
+    # Ashta Koota matching is Nakshatra/Rashi based, so it MUST use the
+    # sidereal (Lahiri) zodiac — the same basis as the kundli chart.
     chart1 = calculate_birth_chart(
         birth_date=person1["birth_date"],
         birth_time=person1.get("birth_time"),
         birth_place=person1.get("birth_place"),
+        sidereal=True,
     )
     chart2 = calculate_birth_chart(
         birth_date=person2["birth_date"],
         birth_time=person2.get("birth_time"),
         birth_place=person2.get("birth_place"),
+        sidereal=True,
     )
 
     # Get Moon longitudes

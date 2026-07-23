@@ -13,17 +13,22 @@ from data.vedic_reference import (
     DASHA_SEQUENCE,
     DASHA_YEARS,
     FESTIVAL_DATES,
+    GULIKA_OCTANT,
     HINDU_MONTH_WINDOWS,
     KARANA_FIXED,
     KARANA_SEQUENCE,
     MUHURTA_LABELS,
+    PAKSHA_TONE,
     PLANET_FASTING_DAYS,
     PLANET_GEMSTONES,
     PLANET_MANTRAS,
+    RAHU_KAAL_OCTANT,
     RASHI_NAMES,
     TITHI_NAMES,
     VARA_NAMES,
     VARA_RULERS,
+    VARA_TONE,
+    YAMAGANDA_OCTANT,
     YOGA_NAMES,
 )
 from logger import get_logger
@@ -83,6 +88,89 @@ def _birth_jd(birth_date: str, birth_time: str | None, birth_place: str | None) 
 def _daily_jd(target_date: date, tz_name: str) -> float:
     local_dt = datetime(target_date.year, target_date.month, target_date.day, 12, 0, tzinfo=ZoneInfo(tz_name))
     return _to_julian_day(local_dt.astimezone(ZoneInfo("UTC")))
+
+
+def _jd_to_local(jd: float, tz_name: str) -> datetime:
+    """Convert a Julian Day (UT) to a timezone-aware local datetime."""
+    year, month, day, hour = swe.revjul(jd)
+    base_utc = datetime(year, month, day, tzinfo=ZoneInfo("UTC")) + timedelta(hours=hour)
+    return base_utc.astimezone(ZoneInfo(tz_name))
+
+
+def _sun_rise_set(target_date: date, lat: float, lon: float, tz_name: str) -> tuple[float | None, float | None]:
+    """Real sunrise/sunset (JD UT) for the local calendar day, disc-centre."""
+    local_midnight = datetime(
+        target_date.year, target_date.month, target_date.day, 0, 0, tzinfo=ZoneInfo(tz_name)
+    )
+    jd_start = _to_julian_day(local_midnight.astimezone(ZoneInfo("UTC")))
+    try:
+        rise_res, rise_t = swe.rise_trans(jd_start, swe.SUN, swe.CALC_RISE | swe.BIT_DISC_CENTER, (lon, lat, 0.0))
+        set_res, set_t = swe.rise_trans(jd_start, swe.SUN, swe.CALC_SET | swe.BIT_DISC_CENTER, (lon, lat, 0.0))
+        sunrise = rise_t[0] if rise_res == 0 else None
+        sunset = set_t[0] if set_res == 0 else None
+        return sunrise, sunset
+    except Exception as exc:  # circumpolar or ephemeris failure
+        logger.warning("Sunrise/sunset calculation failed: %s", exc)
+        return None, None
+
+
+def _fmt_clock(jd: float, tz_name: str) -> str:
+    return _jd_to_local(jd, tz_name).strftime("%I:%M %p").lstrip("0")
+
+
+def _fmt_window(start_jd: float, end_jd: float, tz_name: str) -> str:
+    return f"{_fmt_clock(start_jd, tz_name)} \u2013 {_fmt_clock(end_jd, tz_name)}"
+
+
+def _daily_timings(target_date: date, lat: float, lon: float, tz_name: str) -> dict:
+    """Sunrise/sunset plus the auspicious and inauspicious daily windows.
+
+    Rahu Kaal, Yamaganda and Gulika each occupy a fixed 1/8th slice of the
+    daytime; Abhijit is the 8th of the 15 day-muhurtas (straddling solar noon);
+    Brahma Muhurta is the 96→48 minute window before sunrise.
+    """
+    sunrise, sunset = _sun_rise_set(target_date, lat, lon, tz_name)
+    if sunrise is None or sunset is None:
+        return {
+            "sunrise": "—",
+            "sunset": "—",
+            "day_length": "—",
+            "abhijit": "—",
+            "brahma_muhurta": "—",
+            "rahu_kaal": "—",
+            "yamaganda": "—",
+            "gulika": "—",
+        }
+
+    day_span = sunset - sunrise          # in days (JD units)
+    octant = day_span / 8.0
+    muhurta = day_span / 15.0
+    weekday = target_date.weekday()
+
+    def _kaal(octant_map: dict) -> str:
+        part = octant_map[weekday]
+        return _fmt_window(sunrise + (part - 1) * octant, sunrise + part * octant, tz_name)
+
+    total_minutes = int(round(day_span * 24 * 60))
+    hours, minutes = divmod(total_minutes, 60)
+
+    return {
+        "sunrise": _fmt_clock(sunrise, tz_name),
+        "sunset": _fmt_clock(sunset, tz_name),
+        "day_length": f"{hours}h {minutes:02d}m",
+        "abhijit": _fmt_window(sunrise + 7 * muhurta, sunrise + 8 * muhurta, tz_name),
+        "brahma_muhurta": _fmt_window(sunrise - 96 / 1440.0, sunrise - 48 / 1440.0, tz_name),
+        "rahu_kaal": _kaal(RAHU_KAAL_OCTANT),
+        "yamaganda": _kaal(YAMAGANDA_OCTANT),
+        "gulika": _kaal(GULIKA_OCTANT),
+    }
+
+
+def _panchang_insight(vara_ruler: str, paksha: str) -> str:
+    """A relevant, day-specific Panchang insight (varies by ruler + paksha)."""
+    tone = VARA_TONE.get(vara_ruler, "steady, mindful effort")
+    phase = PAKSHA_TONE.get(paksha, "")
+    return f"Ruled by {vara_ruler}, today leans toward {tone}. {phase}".strip()
 
 
 def _sidereal_longitude(jd: float, planet_id: int) -> float:
@@ -278,14 +366,32 @@ def _remedy_summary(dasha: dict, doshas: list[str]) -> dict:
     }
 
 
-def _muhurta_summary(target_date: date) -> dict:
-    start = datetime(target_date.year, target_date.month, target_date.day, 12, 6)
-    end = start + timedelta(minutes=48)
+def _muhurta_summary(target_date: date, lat: float, lon: float, tz_name: str) -> dict:
+    """Abhijit Muhurta — the 8th of the 15 day-muhurtas, centred on solar noon."""
+    sunrise, sunset = _sun_rise_set(target_date, lat, lon, tz_name)
+    if sunrise is None or sunset is None:
+        start = datetime(target_date.year, target_date.month, target_date.day, 12, 6)
+        end = start + timedelta(minutes=48)
+        starts_at = start.strftime("%I:%M %p").lstrip("0")
+        ends_at = end.strftime("%I:%M %p").lstrip("0")
+    else:
+        muhurta = (sunset - sunrise) / 15.0
+        starts_at = _fmt_clock(sunrise + 7 * muhurta, tz_name)
+        ends_at = _fmt_clock(sunrise + 8 * muhurta, tz_name)
+
+    if target_date.weekday() == 2:  # Wednesday
+        note = (
+            "Abhijit straddles solar noon and is the day's most dependable window — "
+            "though tradition sets it aside on Wednesdays."
+        )
+    else:
+        note = VEDIC_CONTENT["muhurta"]["default"]
+
     return {
         "label": MUHURTA_LABELS["abhijit"],
-        "starts_at": start.strftime("%I:%M %p"),
-        "ends_at": end.strftime("%I:%M %p"),
-        "note": VEDIC_CONTENT["muhurta"]["default"],
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "note": note,
     }
 
 
@@ -298,11 +404,16 @@ def get_vedic_home_summary(
     today = date.fromisoformat(target_date) if target_date else date.today()
     location_name = birth_place or "India"
     coords = geocode_place(location_name) or (20.5937, 78.9629)
+    lat, lon = coords
     tz_name = _timezone_name(location_name)
-    jd_today = _daily_jd(today, tz_name)
 
-    sun_lon = _sidereal_longitude(jd_today, swe.SUN)
-    moon_lon = _sidereal_longitude(jd_today, swe.MOON)
+    # Panchang is traditionally reckoned from sunrise; fall back to local noon
+    # only if sunrise cannot be resolved (e.g. polar latitudes).
+    sunrise_jd, _sunset_jd = _sun_rise_set(today, lat, lon, tz_name)
+    reference_jd = sunrise_jd if sunrise_jd is not None else _daily_jd(today, tz_name)
+
+    sun_lon = _sidereal_longitude(reference_jd, swe.SUN)
+    moon_lon = _sidereal_longitude(reference_jd, swe.MOON)
     lunar_phase = (moon_lon - sun_lon) % 360
 
     tithi_index = int(lunar_phase / 12) % 30
@@ -310,23 +421,25 @@ def get_vedic_home_summary(
     nak = _nakshatra_from_longitude(moon_lon)
 
     weekday_index = today.weekday()
+    paksha = "Shukla" if tithi_index < 15 else "Krishna"
+    vara_ruler = VARA_RULERS[weekday_index]
     panchang = {
         "date": today.isoformat(),
         "vara": VARA_NAMES[weekday_index],
-        "vara_ruler": VARA_RULERS[weekday_index],
+        "vara_ruler": vara_ruler,
         "tithi": TITHI_NAMES[tithi_index],
-        "paksha": "Shukla" if tithi_index < 15 else "Krishna",
+        "paksha": paksha,
         "nakshatra": nak["name"],
         "yoga": YOGA_NAMES[yoga_index],
         "karana": _karana_name(lunar_phase),
-        "insight": VEDIC_CONTENT["panchang"]["default"],
+        "insight": _panchang_insight(vara_ruler, paksha),
     }
 
     result = {
         "location": {
             "name": location_name,
-            "latitude": round(coords[0], 4),
-            "longitude": round(coords[1], 4),
+            "latitude": round(lat, 4),
+            "longitude": round(lon, 4),
             "timezone": tz_name,
         },
         "panchang": panchang,
@@ -337,7 +450,8 @@ def get_vedic_home_summary(
             "next_festival_date": _abbreviate_date(_next_festival(today)["date"]),
             "note": _next_festival(today)["note"],
         },
-        "muhurta": _muhurta_summary(today),
+        "muhurta": _muhurta_summary(today, lat, lon, tz_name),
+        "timings": _daily_timings(today, lat, lon, tz_name),
         "kundli": None,
         "dasha": None,
         "dosha": None,
@@ -347,18 +461,18 @@ def get_vedic_home_summary(
     if not birth_date:
         return result
 
-    chart = calculate_birth_chart(birth_date=birth_date, birth_time=birth_time, birth_place=birth_place)
-    jd_birth = _birth_jd(birth_date, birth_time, birth_place)
-    ayanamsha = swe.get_ayanamsa_ut(jd_birth)
-    sidereal_asc = (chart["ascendant"]["longitude"] - ayanamsha) % 360
-    sidereal_moon = _sidereal_longitude(jd_birth, swe.MOON)
+    chart = calculate_birth_chart(
+        birth_date=birth_date, birth_time=birth_time, birth_place=birth_place, sidereal=True
+    )
+    sidereal_asc = chart["ascendant"]["longitude"]
+    sidereal_moon = next(p["longitude"] for p in chart["planets"] if p["name"] == "Moon")
     birth_nak = _nakshatra_from_longitude(sidereal_moon)
 
     kundli = {
         "lagna": _rashi_name_from_longitude(sidereal_asc),
         "moon_sign": _rashi_name_from_longitude(sidereal_moon),
         "nakshatra": birth_nak["name"],
-        "note": "Birth time missing, houses may be estimated." if not birth_time else "Chart summary ready.",
+        "note": "Birth time missing — Lagna estimated from the Moon sign." if not birth_time else "Chart summary ready.",
     }
 
     dasha = _current_dasha(birth_date, birth_time, birth_place, today)

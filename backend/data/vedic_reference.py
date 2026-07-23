@@ -163,3 +163,27 @@ MUHURTA_LABELS = {
     "abhijit": "Abhijit Muhurta",
     "brahma": "Brahma Muhurta",
 }
+
+# Which 1/8th part of the daytime (sunrise→sunset) each inauspicious "kaal"
+# falls in, keyed by Python weekday() (Monday=0 … Sunday=6). These are the
+# classical Panchang assignments used across Drik/Vedic almanacs.
+RAHU_KAAL_OCTANT = {6: 8, 0: 2, 1: 7, 2: 5, 3: 6, 4: 4, 5: 3}
+YAMAGANDA_OCTANT = {6: 5, 0: 4, 1: 3, 2: 2, 3: 1, 4: 7, 5: 6}
+GULIKA_OCTANT = {6: 7, 0: 6, 1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
+
+# Short qualitative tone of each Vara ruler, used to compose a relevant,
+# non-repeating daily Panchang insight.
+VARA_TONE = {
+    "Sun": "leadership, vitality, and clear self-direction",
+    "Moon": "emotional care, home, and receptivity",
+    "Mars": "courage, drive, and decisive action",
+    "Mercury": "communication, learning, and commerce",
+    "Jupiter": "wisdom, growth, and auspicious effort",
+    "Venus": "relationships, comfort, and creativity",
+    "Saturn": "discipline, patience, and steady, honest work",
+}
+
+PAKSHA_TONE = {
+    "Shukla": "The waxing Moon favours new beginnings, growth, and outward momentum.",
+    "Krishna": "The waning Moon favours completion, release, and quiet consolidation.",
+}

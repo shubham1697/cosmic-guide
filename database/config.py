@@ -2,6 +2,28 @@ import os
 import logging
 import sys
 
+
+def _ensure_shared_importable() -> None:
+    """Add the directory that contains ``shared/`` to sys.path.
+
+    Works both in Docker (database/ lives at /app/database, shared/ at
+    /app/shared) and in local dev (config.py lives in <repo>/database/).
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        if os.path.isdir(os.path.join(here, "shared")):
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            return
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
+
+
+_ensure_shared_importable()
+from shared.llm_config import load_llm_config  # noqa: E402
+
 # ── Database settings ─────────────────────────────────────────────────────────
 
 DATABASE_URL = os.getenv(
@@ -9,11 +31,25 @@ DATABASE_URL = os.getenv(
     "postgresql://cosmicguide:cosmicguide@localhost:5432/cosmicguide",
 )
 
-# ── Ollama settings ───────────────────────────────────────────────────────────
+# ── LLM connection config (shared single source of truth) ─────────────
+# Same provider selection + fallback chain as the backend:
+#   auto → Gemini (if key) → Ollama → iPhone LLM
+_llm = load_llm_config()
 
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "192.168.29.159:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "600"))
+AI_PROVIDER = _llm.ai_provider
+AI_MODEL = _llm.ai_model
+GEMINI_API_KEY = _llm.gemini_api_key
+
+# Ollama — the stdlib http.client used here needs a bare host:port
+OLLAMA_HOST = _llm.ollama_host
+OLLAMA_MODEL = _llm.ollama_model
+OLLAMA_TIMEOUT = _llm.ollama_timeout
+
+# iPhone-hosted LLM (OpenAI-compatible endpoint)
+IPHONE_LLM_BASE_URL = _llm.iphone_llm_base_url
+IPHONE_LLM_MODEL = _llm.iphone_llm_model
+IPHONE_LLM_API_KEY = _llm.iphone_llm_api_key
+IPHONE_LLM_TIMEOUT = _llm.iphone_llm_timeout
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 

@@ -37,7 +37,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.config import (
     configure_logging, get_logger,
-    DATABASE_URL, OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    DATABASE_URL, AI_PROVIDER, AI_MODEL, GEMINI_API_KEY,
+    OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    IPHONE_LLM_BASE_URL, IPHONE_LLM_MODEL, IPHONE_LLM_API_KEY, IPHONE_LLM_TIMEOUT,
 )
 
 configure_logging()
@@ -121,6 +123,139 @@ def _ollama_generate(prompt: str, expect_json: bool = True,
         elapsed = time.perf_counter() - t0
         log.error("Ollama error after %.1fs: %s", elapsed, exc)
         return None
+
+
+def _iphone_generate(prompt: str, expect_json: bool = True,
+                     max_tokens: int = 800) -> str | None:
+    """Call the iPhone-hosted, OpenAI-compatible LLM. Returns text or None."""
+    scheme, _, rest = IPHONE_LLM_BASE_URL.partition("://")
+    host_port, _, prefix = rest.partition("/")
+    path = "/" + (prefix.rstrip("/") + "/chat/completions").lstrip("/")
+
+    body = {
+        "model": IPHONE_LLM_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0.8,
+    }
+    if expect_json:
+        body["response_format"] = {"type": "json_object"}
+    headers = {"Content-Type": "application/json"}
+    if IPHONE_LLM_API_KEY and IPHONE_LLM_API_KEY != "not-needed":
+        headers["Authorization"] = f"Bearer {IPHONE_LLM_API_KEY}"
+
+    t0 = time.perf_counter()
+    try:
+        conn_cls = (http.client.HTTPSConnection if scheme == "https"
+                    else http.client.HTTPConnection)
+        conn = conn_cls(host_port, timeout=IPHONE_LLM_TIMEOUT)
+        conn.request("POST", path, body=json.dumps(body).encode(), headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+        conn.close()
+        if resp.status != 200:
+            log.error("iPhone LLM HTTP %d: %s", resp.status, raw[:300])
+            return None
+        data = json.loads(raw)
+        text = (data.get("choices", [{}])[0]
+                .get("message", {}).get("content", "") or "").strip()
+        log.debug("iPhone LLM response in %.1fs  len=%d",
+                  time.perf_counter() - t0, len(text))
+        return text or None
+    except Exception as exc:
+        log.error("iPhone LLM error after %.1fs: %s", time.perf_counter() - t0, exc)
+        return None
+
+
+def _gemini_generate(prompt: str, expect_json: bool = True,
+                     max_tokens: int = 800) -> str | None:
+    """Call Google Gemini via its REST API. Returns text or None."""
+    if not GEMINI_API_KEY:
+        return None
+    path = f"/v1beta/models/{AI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    gen_cfg = {"maxOutputTokens": max_tokens, "temperature": 0.8}
+    if expect_json:
+        gen_cfg["responseMimeType"] = "application/json"
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": gen_cfg,
+    }
+
+    t0 = time.perf_counter()
+    try:
+        conn = http.client.HTTPSConnection("generativelanguage.googleapis.com",
+                                           timeout=OLLAMA_TIMEOUT)
+        conn.request("POST", path, body=json.dumps(body).encode(),
+                     headers={"Content-Type": "application/json"})
+        resp = conn.getresponse()
+        raw = resp.read().decode(errors="replace")
+        conn.close()
+        if resp.status != 200:
+            log.error("Gemini HTTP %d: %s", resp.status, raw[:300])
+            return None
+        cands = json.loads(raw).get("candidates", [])
+        if not cands:
+            return None
+        parts = cands[0].get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in parts).strip()
+        log.debug("Gemini response in %.1fs  len=%d", time.perf_counter() - t0, len(text))
+        return text or None
+    except Exception as exc:
+        log.error("Gemini error after %.1fs: %s", time.perf_counter() - t0, exc)
+        return None
+
+
+# Provider registry — one generator function per backend.
+_PROVIDER_FUNCS = {
+    "gemini": _gemini_generate,
+    "ollama": _ollama_generate,
+    "iphone": _iphone_generate,
+}
+
+
+# Set once by main() after the preflight reachability check to the providers
+# that actually responded, so per-item generation skips known-dead backends.
+_runtime_providers: list | None = None
+
+
+def _active_providers() -> list:
+    """Return the ordered providers to try, honoring AI_PROVIDER.
+
+    A specific value (gemini/ollama/iphone) forces just that backend; ``auto``
+    tries Gemini (only if a key is set), then Ollama, then the iPhone LLM.
+    """
+    if AI_PROVIDER in _PROVIDER_FUNCS:
+        return [AI_PROVIDER]
+    order = []
+    if GEMINI_API_KEY:
+        order.append("gemini")
+    order.extend(["ollama", "iphone"])
+    return order
+
+
+def _generation_providers() -> list:
+    """Providers to try for each generation call.
+
+    After preflight, ``main()`` narrows this to the reachable subset so we don't
+    retry a backend already known to be down on every single item.
+    """
+    return _runtime_providers if _runtime_providers is not None else _active_providers()
+
+
+def _llm_generate(prompt: str, expect_json: bool = True,
+                  max_tokens: int = 800) -> str | None:
+    """Generate content using the configured provider(s), with auto-fallback."""
+    for name in _generation_providers():
+        try:
+            text = _PROVIDER_FUNCS[name](prompt, expect_json=expect_json,
+                                         max_tokens=max_tokens)
+        except Exception as exc:  # provider blew up — try the next one
+            log.warning("Provider '%s' failed: %s", name, exc)
+            continue
+        if text:
+            return text
+        log.warning("Provider '%s' returned no content — trying next", name)
+    return None
 
 
 def _parse_json(raw: str, log_error: bool = True) -> dict | list | None:
@@ -297,6 +432,95 @@ def _extract_story_fields(raw: str) -> dict | None:
     }
 
 
+_HOROSCOPE_STR_KEYS = ("zodiac_sign", "date", "general", "love", "career",
+                       "health", "lucky_color", "mood")
+_HOROSCOPE_INT_KEYS = ("overall_score", "lucky_number")
+_HOROSCOPE_KEYS = _HOROSCOPE_STR_KEYS + _HOROSCOPE_INT_KEYS
+
+
+def _extract_horoscope_fields(raw: str) -> dict | None:
+    """Best-effort field extraction for malformed horoscope JSON responses.
+
+    Grabs each known key independently with regex, so a single missing comma or
+    stray character elsewhere in the response can't sink the whole horoscope.
+    """
+    if not raw:
+        return None
+
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    def _clean(v: str) -> str:
+        return (
+            v.replace('\\"', '"')
+            .replace("\\n", "\n")
+            .replace("\\r", "")
+            .replace("\\t", "\t")
+            .strip()
+        )
+
+    def _grab_str(key: str) -> str:
+        others = "|".join(re.escape(k) for k in _HOROSCOPE_KEYS if k != key)
+        pattern = (
+            rf'"{re.escape(key)}"\s*:\s*"(.*?)"\s*'
+            rf'(?=\s*,?\s*"(?:{others})"\s*:|\s*\}}|\s*\Z)'
+        )
+        m = re.search(pattern, text, re.DOTALL)
+        return _clean(m.group(1)) if m else ""
+
+    def _grab_int(key: str):
+        m = re.search(rf'"{re.escape(key)}"\s*:\s*"?(\d+)"?', text)
+        return int(m.group(1)) if m else None
+
+    def _grab_general() -> str:
+        # Strict grab first (value cleanly closed before the next key/brace).
+        val = _grab_str("general")
+        if val:
+            return val
+        # Truncation-tolerant: the model often rambles a long, multi-paragraph
+        # "general" and gets cut off mid-string. Capture from the opening quote
+        # to the next known-key boundary, or to end-of-text, then tidy + cap it.
+        m = re.search(r'"general"\s*:\s*"(.*)$', text, re.DOTALL)
+        if not m:
+            return ""
+        rest = m.group(1)
+        others = "|".join(re.escape(k) for k in _HOROSCOPE_KEYS if k != "general")
+        boundary = re.search(rf'"\s*,?\s*"(?:{others})"\s*:', rest)
+        if boundary:
+            rest = rest[:boundary.start()]
+        rest = _clean(rest.rstrip('"').rstrip())
+        if len(rest) > 600:  # trim a runaway essay back to a whole sentence
+            rest = rest[:600]
+            cut = max(rest.rfind("."), rest.rfind("!"), rest.rfind("?"))
+            if cut > 200:
+                rest = rest[:cut + 1]
+        return rest.strip()
+
+    general = _grab_general()
+    if not general:
+        # Nothing usable recovered — let the caller emit the real parse error.
+        return None
+
+    data: dict = {"general": general}
+    for key in _HOROSCOPE_STR_KEYS:
+        if key == "general":
+            continue
+        val = _grab_str(key)
+        if val:
+            data[key] = val
+    for key in _HOROSCOPE_INT_KEYS:
+        val = _grab_int(key)
+        if val is not None:
+            data[key] = val
+    return data
+
+
 def _check_ollama() -> bool:
     """Verify Ollama is reachable."""
     try:
@@ -311,6 +535,46 @@ def _check_ollama() -> bool:
     except Exception as exc:
         log.error("Cannot reach Ollama at %s: %s", OLLAMA_HOST, exc)
         return False
+
+
+def _check_iphone() -> bool:
+    """Verify the iPhone LLM endpoint is reachable (GET {base}/models)."""
+    scheme, _, rest = IPHONE_LLM_BASE_URL.partition("://")
+    host_port, _, prefix = rest.partition("/")
+    path = "/" + (prefix.rstrip("/") + "/models").lstrip("/")
+    try:
+        conn_cls = (http.client.HTTPSConnection if scheme == "https"
+                    else http.client.HTTPConnection)
+        conn = conn_cls(host_port, timeout=10)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        if resp.status == 200:
+            log.info("iPhone LLM OK at %s  model=%s", IPHONE_LLM_BASE_URL, IPHONE_LLM_MODEL)
+            return True
+        log.error("iPhone LLM HTTP %d at %s", resp.status, IPHONE_LLM_BASE_URL)
+        return False
+    except Exception as exc:
+        log.error("Cannot reach iPhone LLM at %s: %s", IPHONE_LLM_BASE_URL, exc)
+        return False
+
+
+def _reachable_providers() -> list:
+    """Ping each active provider; return those that respond, in priority order."""
+    reachable = []
+    for name in _active_providers():
+        if name == "ollama" and _check_ollama():
+            reachable.append(name)
+        elif name == "iphone" and _check_iphone():
+            reachable.append(name)
+        elif name == "gemini":
+            if GEMINI_API_KEY:
+                log.info("Gemini configured  model=%s", AI_MODEL)
+                reachable.append(name)
+            else:
+                log.warning("Gemini selected but GEMINI_API_KEY is empty — skipping")
+    return reachable
 
 
 # ── Content generators ────────────────────────────────────────────────────────
@@ -333,27 +597,37 @@ def populate_horoscopes(db, target_date: date, force: bool = False) -> int:
         log.info("  [GEN] %s ...", sign)
         prompt = (
             f"Generate a daily horoscope for {sign} for {day_label}.\n"
-            "Return ONLY valid JSON, no markdown fences, with these exact keys:\n"
+            "Respond with ONLY a single-line, compact, valid JSON object. "
+            "No markdown, no code fences, and no line breaks inside any value. "
+            "Keep every field brief — the \"general\" field must be 2-3 sentences "
+            "(60-80 words maximum). Use exactly these keys:\n"
             f'{{"zodiac_sign":"{sign}","date":"{date_str}",'
-            '"general":"2-3 uplifting sentences about the day (60-80 words)",'
-            '"love":"1-2 sentences on romance and relationships",'
-            '"career":"1-2 sentences on work and professional life",'
-            '"health":"1-2 sentences on wellness and self-care",'
+            '"general":"2-3 uplifting sentences (60-80 words)",'
+            '"love":"1 short sentence on romance",'
+            '"career":"1 short sentence on work",'
+            '"health":"1 short sentence on wellness",'
             '"overall_score": <integer 65-95>,'
             '"lucky_number": <integer 1-99>,'
             '"lucky_color":"one color word",'
-            '"mood":"one positive descriptive word"}'
+            '"mood":"one positive word"}'
         )
 
         try:
-            raw = _ollama_generate(prompt)
+            raw = _llm_generate(prompt, max_tokens=500)
         except RuntimeError as exc:
-            log.error("  [ABORT] Ollama fatal error — stopping: %s", exc)
+            log.error("  [ABORT] LLM fatal error — stopping: %s", exc)
             break
         if not raw:
-            log.error("  [FAIL] %s — empty Ollama response", sign)
+            log.error("  [FAIL] %s — empty LLM response", sign)
             continue
-        data = _parse_json(raw)
+        data = _parse_json(raw, log_error=False)
+        if not isinstance(data, dict):
+            data = _extract_horoscope_fields(raw)
+            if isinstance(data, dict):
+                log.warning("  [RECOVER] %s — parsed via fallback field extraction", sign)
+            else:
+                # Only emit the hard parse error if we could not recover.
+                _parse_json(raw, log_error=True)
         if not isinstance(data, dict):
             log.error("  [FAIL] %s — bad response | raw[:200]: %s", sign, raw[:200])
             continue
@@ -396,7 +670,7 @@ def populate_tarot(db, force: bool = False) -> int:
             'Acknowledge the shadow aspect, then pivot to empowerment. End with guidance."}'
         )
 
-        raw = _ollama_generate(prompt, max_tokens=600)
+        raw = _llm_generate(prompt, max_tokens=600)
         data = _parse_json(raw)
         if not isinstance(data, dict):
             log.error("  [FAIL] %s — bad response", name)
@@ -447,9 +721,9 @@ def populate_fortunes(db, target_date: date, force: bool = False) -> int:
             )
 
             try:
-                raw = _ollama_generate(prompt, max_tokens=300)
+                raw = _llm_generate(prompt, max_tokens=300)
             except RuntimeError as exc:
-                log.error("  [ABORT] Ollama fatal error — stopping: %s", exc)
+                log.error("  [ABORT] LLM fatal error — stopping: %s", exc)
                 return generated
             data = _parse_json(raw)
 
@@ -503,7 +777,7 @@ def populate_compatibility(db, force: bool = False) -> int:
             '"challenges":"1-2 sentences about what to watch out for"}'
         )
 
-        raw = _ollama_generate(prompt, max_tokens=500)
+        raw = _llm_generate(prompt, max_tokens=500)
         data = _parse_json(raw)
         if not isinstance(data, dict):
             log.error("  [FAIL] %s × %s — bad response", s1, s2)
@@ -563,7 +837,7 @@ def populate_stories(db, force: bool = False) -> int:
             '"read_time":"X min"}'
         )
 
-        raw = _ollama_generate(prompt, max_tokens=1200)
+        raw = _llm_generate(prompt, max_tokens=1200)
         data = _parse_json(raw, log_error=False)
         if not isinstance(data, dict):
             data = _extract_story_fields(raw)
@@ -636,7 +910,7 @@ def populate_vedic_content(force: bool = False) -> int:
         '}'
     )
 
-    raw = _ollama_generate(prompt, max_tokens=1200)
+    raw = _llm_generate(prompt, max_tokens=1200)
     data = _parse_json(raw)
     if not isinstance(data, dict):
         log.error("[FAIL] Vedic content — bad response")
@@ -748,9 +1022,8 @@ def main():
         return
 
     log.info("Database: %s", DATABASE_URL.split("@")[-1] if "@" in DATABASE_URL else DATABASE_URL)
-    log.info("Checking Ollama at %s ...", OLLAMA_HOST)
 
-    # Seed doesn't need Ollama
+    # Seed doesn't need an LLM
     if args.seed:
         log.info("━━━ SEED STATIC DATA ━━━")
         seed_tarot(db, args.force)
@@ -760,13 +1033,22 @@ def main():
         db.close()
         return
 
-    if not _check_ollama():
-        log.error("Ollama is not reachable at %s — aborting", OLLAMA_HOST)
+    log.info("LLM provider: %s — checking connectivity ...", AI_PROVIDER)
+    reachable = _reachable_providers()
+    if not reachable:
+        log.error("No configured LLM provider is reachable (tried: %s) — aborting",
+                  ", ".join(_active_providers()))
         db.close()
         sys.exit(1)
+    log.info("LLM ready — provider order: %s", " → ".join(reachable))
 
-    log.info("Target date: %s  Days: %d  Model: %s  Force: %s",
-             target_date.isoformat(), num_days, OLLAMA_MODEL, args.force)
+    # Narrow subsequent per-item generation to the providers that responded, so
+    # we don't retry a known-dead backend (e.g. Ollama) on every single call.
+    global _runtime_providers
+    _runtime_providers = reachable
+
+    log.info("Target date: %s  Days: %d  Force: %s",
+             target_date.isoformat(), num_days, args.force)
     log.info("=" * 60)
 
     t0 = time.perf_counter()

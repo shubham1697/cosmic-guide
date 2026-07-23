@@ -32,10 +32,15 @@ services:
       - SECRET_KEY=local-dev-secret-key
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_MODEL=gemini-2.5-flash-lite
+      - AI_PROVIDER=${AI_PROVIDER:-auto}
       - LOG_LEVEL=DEBUG
       - OLLAMA_BASE_URL=http://192.168.29.159:11434
+      - IPHONE_LLM_BASE_URL=${IPHONE_LLM_BASE_URL:-http://192.168.29.162:8080/v1}
+      - IPHONE_LLM_MODEL=${IPHONE_LLM_MODEL:-base}
+      - IPHONE_LLM_API_KEY=${IPHONE_LLM_API_KEY:-not-needed}
     volumes:
       - ./backend:/app
+      - ./shared:/app/shared
     restart: unless-stopped
 
   populate:
@@ -48,8 +53,16 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://cosmicguide:cosmicguide@db:5432/cosmicguide
-      - OLLAMA_HOST=192.168.29.159:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma4:e4b}
+      - AI_PROVIDER=${AI_PROVIDER:-auto}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-gemini-2.5-flash-lite}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://192.168.29.159:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
+      - IPHONE_LLM_BASE_URL=${IPHONE_LLM_BASE_URL:-http://192.168.29.162:8080/v1}
+      - IPHONE_LLM_MODEL=${IPHONE_LLM_MODEL:-base}
+      - IPHONE_LLM_API_KEY=${IPHONE_LLM_API_KEY:-not-needed}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
+      - IPHONE_LLM_TIMEOUT=${IPHONE_LLM_TIMEOUT:-600}
       - LOG_LEVEL=INFO
     profiles:
       - populate

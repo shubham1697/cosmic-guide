@@ -249,10 +249,46 @@ class ApiService {
         final data = json.decode(response.body);
         return BirthChartData.fromJson(data);
       } else {
-        debugPrint('getBirthChart failed: ${response.statusCode} ${response.body}');
+        debugPrint(
+          'getBirthChart failed: ${response.statusCode} ${response.body}',
+        );
       }
     } catch (e) {
       debugPrint('getBirthChart error: $e');
+    }
+    return null;
+  }
+
+  /// Fetch a sidereal Vedic (Jyotish) birth chart — Lahiri ayanamsa, the nine
+  /// grahas (incl. Rahu/Ketu), and whole-sign houses. This is the data that
+  /// powers the authentic North/South Indian kundli chart.
+  static Future<BirthChartData?> getVedicChart({
+    required String birthDate,
+    String? birthTime,
+    String? birthPlace,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/chart/vedic'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'birthDate': birthDate,
+              'birthTime': birthTime,
+              'birthPlace': birthPlace,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return BirthChartData.fromJson(data);
+      } else {
+        debugPrint(
+          'getVedicChart failed: ${response.statusCode} ${response.body}',
+        );
+      }
+    } catch (e) {
+      debugPrint('getVedicChart error: $e');
     }
     return null;
   }

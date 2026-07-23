@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from config import settings
 from logger import configure_logging, get_logger
+from audit import audit_inbound, new_request_id, set_request_id
 from db.database import engine, Base, get_db
 from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic
 
@@ -47,19 +48,62 @@ async def log_requests(request: Request, call_next):
     path = request.url.path
     query = str(request.url.query)
 
-    logger.info("→ %s %s%s", method, path, f"?{query}" if query else "")
-    logger.debug("  client=%s", request.client.host if request.client else "unknown")
+    # Correlation id — reuse an inbound X-Request-ID if the caller supplied one.
+    request_id = request.headers.get("x-request-id") or new_request_id()
+    set_request_id(request_id)
 
-    response = await call_next(request)
-
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    level = logging.WARNING if elapsed_ms > 5000 else logging.INFO
-    logger.log(
-        level,
-        "← %s %s  status=%d  %.0fms",
-        method, path, response.status_code, elapsed_ms,
+    # Prefer the real client IP when behind a proxy/load balancer.
+    forwarded_for = request.headers.get("x-forwarded-for")
+    client_ip = (
+        forwarded_for.split(",")[0].strip()
+        if forwarded_for
+        else (request.client.host if request.client else "unknown")
     )
-    return response
+    user_agent = request.headers.get("user-agent", "")
+    req_len = request.headers.get("content-length")
+    request_bytes = int(req_len) if req_len and req_len.isdigit() else None
+
+    logger.info("→ %s %s%s", method, path, f"?{query}" if query else "")
+    logger.debug("  client=%s  request_id=%s", client_ip, request_id)
+
+    status_code = 500
+    response = None
+    audit_error = None
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception as exc:
+        audit_error = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        resp_len = response.headers.get("content-length") if response else None
+        response_bytes = int(resp_len) if resp_len and resp_len.isdigit() else None
+
+        if response is not None:
+            response.headers["X-Request-ID"] = request_id
+
+        level = logging.WARNING if elapsed_ms > 5000 else logging.INFO
+        logger.log(
+            level,
+            "← %s %s  status=%d  %.0fms  request_id=%s",
+            method, path, status_code, elapsed_ms, request_id,
+        )
+
+        audit_inbound(
+            request_id=request_id,
+            method=method,
+            path=path,
+            query=query,
+            client_ip=client_ip,
+            user_agent=user_agent,
+            status_code=status_code,
+            duration_ms=elapsed_ms,
+            request_bytes=request_bytes,
+            response_bytes=response_bytes,
+            error=audit_error,
+        )
 
 
 # Global error handler

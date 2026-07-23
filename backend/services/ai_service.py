@@ -59,6 +59,94 @@ def _get_client():
         return None
 
 
+# ── lazy-initialise the iPhone LLM client (OpenAI-compatible endpoint) ────────
+_iphone_client = None
+
+
+def _get_iphone_client():
+    """Return a cached OpenAI client pointed at the iPhone LLM, or None."""
+    global _iphone_client
+    if _iphone_client is not None:
+        return _iphone_client
+    try:
+        from openai import OpenAI  # noqa: PLC0415
+        _iphone_client = OpenAI(
+            base_url=settings.IPHONE_LLM_BASE_URL,
+            api_key=settings.IPHONE_LLM_API_KEY or "not-needed",
+        )
+        logger.info(
+            "iPhone LLM client initialised  base_url=%s  model=%s",
+            settings.IPHONE_LLM_BASE_URL, settings.IPHONE_LLM_MODEL,
+        )
+        return _iphone_client
+    except ImportError:
+        logger.error("openai is not installed. Run: pip install openai")
+        return None
+
+
+def _call_ai_iphone(user_prompt: str, expect_json: bool = True,
+                    max_tokens: int = 2000) -> Optional[str]:
+    """Call the iPhone-hosted LLM via its OpenAI-compatible API."""
+    from logging_utils import log_external_api_call
+
+    client = _get_iphone_client()
+    if client is None:
+        return None
+
+    model = settings.IPHONE_LLM_MODEL
+    endpoint_url = f"{settings.IPHONE_LLM_BASE_URL.rstrip('/')}/chat/completions"
+    prompt_preview = user_prompt[:120].replace("\n", " ")
+
+    logger.debug(
+        "_call_ai_iphone  model=%s  max_tokens=%d  json=%s  prompt_preview='%s…'",
+        model, max_tokens, expect_json, prompt_preview,
+    )
+
+    kwargs = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": min(max_tokens, settings.IPHONE_LLM_MAX_TOKENS),
+        "temperature": 0.85,
+    }
+    if expect_json:
+        kwargs["response_format"] = {"type": "json_object"}
+
+    t0 = time.perf_counter()
+    try:
+        response = client.chat.completions.create(
+            timeout=settings.IPHONE_LLM_TIMEOUT,
+            **kwargs,
+        )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        text = (response.choices[0].message.content or "").strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+
+        log_external_api_call(
+            service_name="iPhoneLLM",
+            endpoint=endpoint_url,
+            method="POST",
+            request_data={"model": model, "format": "json" if expect_json else "text"},
+            response_text=text,
+            elapsed_ms=elapsed_ms,
+        )
+        return text
+    except Exception as exc:
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        log_external_api_call(
+            service_name="iPhoneLLM",
+            endpoint=endpoint_url,
+            method="POST",
+            request_data={"model": model},
+            elapsed_ms=elapsed_ms,
+            error=exc,
+        )
+        return None
+
+
 def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
                     max_tokens: int = 2000) -> Optional[str]:
     """Call the local Ollama instance and return the raw text response."""
@@ -108,7 +196,7 @@ def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
         
         log_external_api_call(
             service_name="Ollama",
-            endpoint="/api/generate",
+            endpoint=endpoint,
             method="POST",
             request_data={"model": model, "format": "json" if expect_json else "text"},
             response_text=text,
@@ -120,7 +208,7 @@ def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
         elapsed_ms = (time.perf_counter() - t0) * 1000
         log_external_api_call(
             service_name="Ollama",
-            endpoint="/api/generate",
+            endpoint=endpoint,
             method="POST",
             request_data=payload,
             elapsed_ms=elapsed_ms,
@@ -141,16 +229,34 @@ def _call_ai(user_prompt: str, expect_json: bool = True,
     Returns None on any error so callers can fall back gracefully.
     """
     from logging_utils import log_external_api_call
-    
+
+    provider = settings.AI_PROVIDER
+
+    # Explicit backend selection via AI_PROVIDER
+    if provider == "ollama":
+        return _call_ai_ollama(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+    if provider == "iphone":
+        return _call_ai_iphone(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+
     client = _get_client()
     if client is None:
-        # Fall back to local Ollama
-        return _call_ai_ollama(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+        if provider == "gemini":
+            logger.warning("AI_PROVIDER=gemini but GEMINI_API_KEY is not set — no content generated")
+            return None
+        # auto mode with no Gemini key — fall back to local providers
+        result = _call_ai_ollama(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+        if result is None:
+            result = _call_ai_iphone(user_prompt, expect_json=expect_json, max_tokens=max_tokens)
+        return result
 
     from google import genai  # noqa: PLC0415
     from google.genai import types  # noqa: PLC0415
 
     effective_model = model or settings.AI_MODEL
+    endpoint_url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{effective_model}:generateContent"
+    )
     prompt_preview = user_prompt[:120].replace("\n", " ")
     logger.debug(
         "_call_ai  model=%s  max_tokens=%d  json=%s  prompt_preview='%s…'",
@@ -179,7 +285,7 @@ def _call_ai(user_prompt: str, expect_json: bool = True,
         
         log_external_api_call(
             service_name="Gemini",
-            endpoint="models.generateContent",
+            endpoint=endpoint_url,
             method="POST",
             request_data={"model": effective_model, "prompt_preview": prompt_preview},
             response_text=text,
@@ -190,7 +296,7 @@ def _call_ai(user_prompt: str, expect_json: bool = True,
         elapsed_ms = (time.perf_counter() - t0) * 1000
         log_external_api_call(
             service_name="Gemini",
-            endpoint="models.generateContent",
+            endpoint=endpoint_url,
             method="POST",
             request_data={"model": effective_model},
             elapsed_ms=elapsed_ms,
@@ -603,13 +709,23 @@ def generate_batch_tarot_interpretations(cards: list) -> Optional[list]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def ai_available() -> bool:
-    """Returns True if Gemini key is set, or if the local Ollama instance is reachable."""
+    """Returns True if Gemini key is set, or a local LLM backend is reachable."""
     if _get_client() is not None:
         return True
     # Check Ollama
     try:
         resp = requests.get(
             f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags",
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return True
+    except Exception:
+        pass
+    # Check iPhone LLM (OpenAI-compatible /models endpoint)
+    try:
+        resp = requests.get(
+            f"{settings.IPHONE_LLM_BASE_URL.rstrip('/')}/models",
             timeout=5,
         )
         return resp.status_code == 200

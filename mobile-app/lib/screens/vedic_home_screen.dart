@@ -157,7 +157,7 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
       case 'Hindu Calendar':
         return 'Monthly Hindu calendar context including the current month and next observed festival.';
       case 'Muhurta':
-        return 'A preview of a favorable daily time window based on the current day context.';
+        return 'Auspicious and inauspicious time windows for ${summary.location.name}, calculated from today\'s real sunrise and sunset.';
       default:
         return 'Vedic feature details.';
     }
@@ -255,10 +255,20 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
         ];
       case 'Muhurta':
         return [
-          _detailCard('Recommended Window', [
-            summary.muhurta.label,
-            '${summary.muhurta.startsAt} - ${summary.muhurta.endsAt}',
+          _detailCard('Sun', [
+            'Sunrise: ${summary.timings.sunrise}',
+            'Sunset: ${summary.timings.sunset}',
+            'Day length: ${summary.timings.dayLength}',
+          ]),
+          _detailCard('Auspicious Windows', [
+            'Abhijit Muhurta: ${summary.timings.abhijit}',
+            'Brahma Muhurta: ${summary.timings.brahmaMuhurta}',
             summary.muhurta.note,
+          ]),
+          _detailCard('Inauspicious — Avoid New Beginnings', [
+            'Rahu Kaal: ${summary.timings.rahuKaal}',
+            'Yamaganda: ${summary.timings.yamaganda}',
+            'Gulika Kaal: ${summary.timings.gulika}',
           ]),
         ];
       default:
@@ -324,6 +334,12 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
                 const SizedBox(height: 24),
                 _buildVaraCard(summary),
                 const SizedBox(height: 28),
+                _buildSectionLabel(context, "Today's Muhurat & Kaal"),
+                const SizedBox(height: 14),
+                _buildDailyTimings(summary),
+                const SizedBox(height: 12),
+                _buildPanchangBanner(context, summary),
+                const SizedBox(height: 28),
                 _buildSectionLabel(context, 'Personal Chart'),
                 const SizedBox(height: 14),
                 _buildRow(context, [
@@ -382,29 +398,21 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
                   ),
                 ], summary),
                 const SizedBox(height: 28),
-                _buildSectionLabel(context, 'Daily & Calendar'),
+                _buildSectionLabel(context, 'Hindu Calendar'),
                 const SizedBox(height: 14),
-                _buildPanchangBanner(context, summary),
-                const SizedBox(height: 12),
-                _buildRow(context, [
+                _buildFeatureCard(
+                  context,
                   _VedicFeature(
                     icon: Icons.calendar_month_rounded,
                     title: 'Hindu Calendar',
                     subtitle:
-                        '${summary.calendar.monthName} ${summary.calendar.samvatYear}',
+                        '${summary.calendar.monthName} · Samvat ${summary.calendar.samvatYear}',
                     details:
-                        '${summary.calendar.nextFestivalName} · ${summary.calendar.nextFestivalDate}',
+                        'Next: ${summary.calendar.nextFestivalName} · ${summary.calendar.nextFestivalDate}',
                     color: AppColors.accent,
                   ),
-                  _VedicFeature(
-                    icon: Icons.access_time_rounded,
-                    title: 'Muhurta',
-                    subtitle: summary.muhurta.label,
-                    details:
-                        '${summary.muhurta.startsAt} - ${summary.muhurta.endsAt}',
-                    color: Colors.teal,
-                  ),
-                ], summary),
+                  summary,
+                ),
                 const SizedBox(height: 28),
                 _buildBirthDataStatus(summary),
                 if (_isLoading) ...[
@@ -482,34 +490,35 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
       ),
       child: Row(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                "Today's Vara",
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                summary.panchang.vara,
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.health,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Today's Vara",
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${summary.location.name} · Day of ${summary.panchang.varaRuler}',
-                style: const TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 13,
+                const SizedBox(height: 6),
+                Text(
+                  summary.panchang.vara,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.health,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                width: 220,
-                child: Text(
+                const SizedBox(height: 4),
+                Text(
+                  '${summary.location.name} · Day of ${summary.panchang.varaRuler}',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Text(
                   '${summary.panchang.tithi} · ${summary.panchang.nakshatra}',
                   style: const TextStyle(
                     color: AppColors.textMuted,
@@ -518,10 +527,22 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _sunTime(Icons.wb_sunny_outlined, summary.timings.sunrise),
+                    const SizedBox(width: 16),
+                    _sunTime(
+                      Icons.nights_stay_outlined,
+                      summary.timings.sunset,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-          const Spacer(),
+          const SizedBox(width: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -533,6 +554,182 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
               Icons.brightness_5_rounded,
               color: AppColors.health,
               size: 30,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sunTime(IconData icon, String time) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: AppColors.health.withAlpha(210)),
+        const SizedBox(width: 5),
+        Text(
+          time,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDailyTimings(VedicHomeSummaryData summary) {
+    final t = summary.timings;
+    return GestureDetector(
+      onTap: () => _openFeatureSheet(context, 'Muhurta', summary),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF241C36), Color(0xFF181D38)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.purple.withAlpha(64)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  'Muhurat & Kaal',
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.health.withAlpha(25),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.health.withAlpha(60)),
+                  ),
+                  child: Text(
+                    'Day ${t.dayLength}',
+                    style: const TextStyle(
+                      color: AppColors.health,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Auspicious — favour meaningful action',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
+            ),
+            const SizedBox(height: 14),
+            _timingTile(
+              Icons.auto_awesome_rounded,
+              const Color(0xFF4CAF50),
+              'Abhijit Muhurta',
+              'Most dependable all-purpose window',
+              t.abhijit,
+            ),
+            _timingTile(
+              Icons.self_improvement_rounded,
+              const Color(0xFF66BB6A),
+              'Brahma Muhurta',
+              'Ideal for prayer, yoga & study',
+              t.brahmaMuhurta,
+            ),
+            Divider(color: AppColors.textMuted.withAlpha(30), height: 26),
+            const Text(
+              'Inauspicious — avoid new beginnings',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 11.5),
+            ),
+            const SizedBox(height: 12),
+            _timingTile(
+              Icons.block_rounded,
+              const Color(0xFFEF5350),
+              'Rahu Kaal',
+              'Hold off on starting ventures',
+              t.rahuKaal,
+            ),
+            _timingTile(
+              Icons.warning_amber_rounded,
+              const Color(0xFFFF7043),
+              'Yamaganda',
+              'Delay important travel & deals',
+              t.yamaganda,
+            ),
+            _timingTile(
+              Icons.remove_circle_outline_rounded,
+              const Color(0xFFFFA726),
+              'Gulika Kaal',
+              'Keep to routine, low-stakes tasks',
+              t.gulika,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timingTile(
+    IconData icon,
+    Color color,
+    String name,
+    String purpose,
+    String time,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withAlpha(28),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  purpose,
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            time,
+            style: TextStyle(
+              color: color,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -683,21 +880,18 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
                 ),
                 const Spacer(),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 7,
-                    vertical: 3,
-                  ),
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
-                    color: AppColors.textMuted.withAlpha(25),
-                    borderRadius: BorderRadius.circular(8),
+                    color: feature.color.withAlpha(22),
+                    shape: BoxShape.circle,
                   ),
-                  child: const Text(
-                    'Preview',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  child: Icon(
+                    feature.onTap != null
+                        ? Icons.arrow_outward_rounded
+                        : Icons.chevron_right_rounded,
+                    color: feature.color.withAlpha(190),
+                    size: 16,
                   ),
                 ),
               ],
@@ -731,15 +925,6 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            const SizedBox(height: 8),
-            Text(
-              'Tap for detail view',
-              style: TextStyle(
-                color: feature.color.withAlpha(180),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ],
         ),
       ),

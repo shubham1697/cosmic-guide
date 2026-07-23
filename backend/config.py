@@ -1,7 +1,32 @@
 import os
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _ensure_shared_importable() -> None:
+    """Add the directory that contains ``shared/`` to sys.path.
+
+    Works both in Docker (backend/ is flattened into /app, so shared/ sits
+    beside this file) and in local dev (config.py lives in <repo>/backend/).
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(5):
+        if os.path.isdir(os.path.join(here, "shared")):
+            if here not in sys.path:
+                sys.path.insert(0, here)
+            return
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
+
+
+_ensure_shared_importable()
+from shared.llm_config import load_llm_config  # noqa: E402
+
+_llm = load_llm_config()
 
 
 class Settings:
@@ -11,20 +36,34 @@ class Settings:
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://cosmicguide:cosmicguide@localhost:5432/cosmicguide")
     SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production")
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY: str = _llm.gemini_api_key
 
     # Gemini model — gemini-2.5-flash-lite is fast, free-tier friendly
-    AI_MODEL: str = os.getenv("AI_MODEL", "gemini-2.5-flash-lite")
+    AI_MODEL: str = _llm.ai_model
+
+    # Preferred LLM backend for content generation.
+    #   auto   → Gemini (if key set) → Ollama → iPhone LLM
+    #   gemini → force Google Gemini
+    #   ollama → force local Ollama
+    #   iphone → force iPhone-hosted LLM
+    AI_PROVIDER: str = _llm.ai_provider
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     CORS_ORIGINS: list = ["*"]
 
     # Local Ollama instance for content generation
-    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://192.168.29.159:11434")
-    OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-    OLLAMA_TIMEOUT: int = int(os.getenv("OLLAMA_TIMEOUT", "360"))
-    OLLAMA_MAX_TOKENS: int = int(os.getenv("OLLAMA_MAX_TOKENS", "2000"))
+    OLLAMA_BASE_URL: str = _llm.ollama_base_url
+    OLLAMA_MODEL: str = _llm.ollama_model
+    OLLAMA_TIMEOUT: int = _llm.ollama_timeout
+    OLLAMA_MAX_TOKENS: int = _llm.ollama_max_tokens
+
+    # iPhone-hosted LLM — OpenAI-compatible endpoint (see iphone_llm/iphone-llm.py)
+    IPHONE_LLM_BASE_URL: str = _llm.iphone_llm_base_url
+    IPHONE_LLM_MODEL: str = _llm.iphone_llm_model
+    IPHONE_LLM_API_KEY: str = _llm.iphone_llm_api_key
+    IPHONE_LLM_TIMEOUT: int = _llm.iphone_llm_timeout
+    IPHONE_LLM_MAX_TOKENS: int = _llm.iphone_llm_max_tokens
 
     # Logging — set LOG_LEVEL env var on Render to control verbosity
     # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)

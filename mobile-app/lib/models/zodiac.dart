@@ -417,6 +417,42 @@ class MuhurtaSummaryData {
   }
 }
 
+class DailyTimingsData {
+  final String sunrise;
+  final String sunset;
+  final String dayLength;
+  final String abhijit;
+  final String brahmaMuhurta;
+  final String rahuKaal;
+  final String yamaganda;
+  final String gulika;
+
+  const DailyTimingsData({
+    required this.sunrise,
+    required this.sunset,
+    required this.dayLength,
+    required this.abhijit,
+    required this.brahmaMuhurta,
+    required this.rahuKaal,
+    required this.yamaganda,
+    required this.gulika,
+  });
+
+  factory DailyTimingsData.fromJson(Map<String, dynamic> json) {
+    String field(String key) => (json[key] ?? '—').toString();
+    return DailyTimingsData(
+      sunrise: field('sunrise'),
+      sunset: field('sunset'),
+      dayLength: field('dayLength'),
+      abhijit: field('abhijit'),
+      brahmaMuhurta: field('brahmaMuhurta'),
+      rahuKaal: field('rahuKaal'),
+      yamaganda: field('yamaganda'),
+      gulika: field('gulika'),
+    );
+  }
+}
+
 class KundliSummaryData {
   final String lagna;
   final String moonSign;
@@ -516,6 +552,7 @@ class VedicHomeSummaryData {
   final PanchangSummaryData panchang;
   final VedicCalendarData calendar;
   final MuhurtaSummaryData muhurta;
+  final DailyTimingsData timings;
   final KundliSummaryData? kundli;
   final DashaSummaryData? dasha;
   final DoshaSummaryData? dosha;
@@ -526,6 +563,7 @@ class VedicHomeSummaryData {
     required this.panchang,
     required this.calendar,
     required this.muhurta,
+    required this.timings,
     this.kundli,
     this.dasha,
     this.dosha,
@@ -538,6 +576,7 @@ class VedicHomeSummaryData {
       panchang: PanchangSummaryData.fromJson(json['panchang'] ?? {}),
       calendar: VedicCalendarData.fromJson(json['calendar'] ?? {}),
       muhurta: MuhurtaSummaryData.fromJson(json['muhurta'] ?? {}),
+      timings: DailyTimingsData.fromJson(json['timings'] ?? {}),
       kundli: json['kundli'] == null
           ? null
           : KundliSummaryData.fromJson(json['kundli']),
