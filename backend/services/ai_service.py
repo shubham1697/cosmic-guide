@@ -23,6 +23,9 @@ from logger import get_logger
 from services.ai_prompts import (
     SYSTEM_PROMPT,
     horoscope_prompt,
+    vedic_horoscope_prompt,
+    period_horoscope_prompt,
+    vedic_period_horoscope_prompt,
     batch_horoscope_prompt,
     fortune_prompt,
     batch_fortune_pool_prompt,
@@ -36,6 +39,10 @@ from services.ai_prompts import (
 )
 
 logger = get_logger(__name__)
+
+# Fail fast when a local LLM host is unreachable instead of blocking for the
+# full read timeout — the connect phase is near-instant on a healthy LAN.
+_LLM_CONNECT_TIMEOUT = 4  # seconds
 
 # ── lazy-initialise the Gemini client so the app starts even without the key ──
 _gemini_client = None
@@ -93,6 +100,8 @@ def _call_ai_iphone(user_prompt: str, expect_json: bool = True,
     if client is None:
         return None
 
+    import httpx  # noqa: PLC0415  — always available alongside the openai client
+
     model = settings.IPHONE_LLM_MODEL
     endpoint_url = f"{settings.IPHONE_LLM_BASE_URL.rstrip('/')}/chat/completions"
     prompt_preview = user_prompt[:120].replace("\n", " ")
@@ -117,7 +126,7 @@ def _call_ai_iphone(user_prompt: str, expect_json: bool = True,
     t0 = time.perf_counter()
     try:
         response = client.chat.completions.create(
-            timeout=settings.IPHONE_LLM_TIMEOUT,
+            timeout=httpx.Timeout(settings.IPHONE_LLM_TIMEOUT, connect=_LLM_CONNECT_TIMEOUT),
             **kwargs,
         )
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -164,8 +173,8 @@ def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
     
     payload = {
         "model": model,
-        "system": SYSTEM_PROMPT[:100] + "…",  # Truncate for logging
-        "prompt": prompt_preview,
+        "system": SYSTEM_PROMPT,
+        "prompt": user_prompt,
         "stream": True,
         "options": {"num_predict": min(max_tokens, settings.OLLAMA_MAX_TOKENS), "temperature": 0.85},
     }
@@ -177,7 +186,7 @@ def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
         resp = requests.post(
             endpoint,
             json=payload,
-            timeout=settings.OLLAMA_TIMEOUT,
+            timeout=(_LLM_CONNECT_TIMEOUT, settings.OLLAMA_TIMEOUT),
             stream=True,
         )
         resp.raise_for_status()
@@ -210,7 +219,7 @@ def _call_ai_ollama(user_prompt: str, expect_json: bool = True,
             service_name="Ollama",
             endpoint=endpoint,
             method="POST",
-            request_data=payload,
+            request_data={"model": model, "prompt_preview": prompt_preview},
             elapsed_ms=elapsed_ms,
             error=exc,
         )
@@ -340,22 +349,28 @@ def _parse_json_array(raw: Optional[str]) -> Optional[list]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def generate_daily_horoscope(zodiac_sign: str,
-                              for_date: date = None) -> Optional[dict]:
+                              for_date: date = None,
+                              system: str = "western") -> Optional[dict]:
     """
     Generate an AI horoscope for one zodiac sign on the given date.
 
-    Returns a dict matching the Horoscope DB model fields, or None on failure.
+    `system` is "western" (tropical Sun sign) or "vedic" (sidereal reading
+    framed on the Moon rashi / Janma Rashi). Returns a dict matching the
+    Horoscope DB model fields, or None on failure.
     """
     if for_date is None:
         for_date = date.today()
 
-    logger.debug("generate_daily_horoscope  sign=%s  date=%s", zodiac_sign, for_date)
-    prompt = horoscope_prompt(zodiac_sign, for_date)
+    logger.debug("generate_daily_horoscope  sign=%s  system=%s  date=%s", zodiac_sign, system, for_date)
+    if system == "vedic":
+        prompt = vedic_horoscope_prompt(zodiac_sign, for_date)
+    else:
+        prompt = horoscope_prompt(zodiac_sign, for_date)
     raw = _call_ai(prompt, expect_json=True, max_tokens=800)
     data = _parse_json(raw)
 
     if not data:
-        logger.warning("generate_daily_horoscope  FAILED  sign=%s  date=%s", zodiac_sign, for_date)
+        logger.warning("generate_daily_horoscope  FAILED  sign=%s  system=%s  date=%s", zodiac_sign, system, for_date)
         return None
 
     score = int(data.get("overall_score", 75))
@@ -416,6 +431,46 @@ def generate_all_horoscopes(for_date: date = None) -> Optional[dict]:
     if result:
         logger.info("generate_all_horoscopes  OK  date=%s  signs=%d", for_date, len(result))
     return result if result else None
+
+
+def generate_periodic_horoscope(zodiac_sign: str, period: str,
+                                start: date, end: date,
+                                system: str = "western") -> Optional[dict]:
+    """
+    Generate a weekly or monthly horoscope for one sign.
+
+    `period` is "weekly" or "monthly"; `system` is "western" or "vedic".
+    Returns the same field shape as generate_daily_horoscope (minus date), or
+    None on failure.
+    """
+    logger.debug("generate_periodic_horoscope  sign=%s  period=%s  system=%s  start=%s",
+                 zodiac_sign, period, system, start)
+    if system == "vedic":
+        prompt = vedic_period_horoscope_prompt(zodiac_sign, period, start, end)
+    else:
+        prompt = period_horoscope_prompt(zodiac_sign, period, start, end)
+    raw = _call_ai(prompt, expect_json=True, max_tokens=1000)
+    data = _parse_json(raw)
+
+    if not data:
+        logger.warning("generate_periodic_horoscope  FAILED  sign=%s  period=%s  system=%s",
+                       zodiac_sign, period, system)
+        return None
+
+    score = int(data.get("overall_score", 75))
+    logger.info("generate_periodic_horoscope  OK  sign=%s  period=%s  score=%d  mood=%s",
+                zodiac_sign, period, score, data.get("mood", "?"))
+    return {
+        "zodiac_sign":   zodiac_sign,
+        "general":       data.get("general", ""),
+        "love":          data.get("love", ""),
+        "career":        data.get("career", ""),
+        "health":        data.get("health", ""),
+        "overall_score": score,
+        "lucky_number":  str(data.get("lucky_number", "7")),
+        "lucky_color":   data.get("lucky_color", "Violet"),
+        "mood":          data.get("mood", "Thoughtful"),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────

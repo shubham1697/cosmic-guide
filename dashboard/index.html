@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CosmicGuide · Dev Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#1A1A2E; --card:#1E2A4A; --gold:#FFD700; --purple:#7C4DFF;
+    --teal:#00BFA5; --pink:#E91E63; --muted:#8b93b7; --line:#2c3a5e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:var(--bg);color:#e8ecff}
+  header{display:flex;align-items:center;gap:16px;padding:16px 24px;
+         border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+  header h1{font-size:18px;margin:0;color:var(--gold);font-weight:700}
+  header .spacer{flex:1}
+  .stamp{color:var(--muted);font-size:12px}
+  label.auto{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;cursor:pointer}
+  nav{display:flex;gap:4px;padding:0 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  nav button{background:none;border:none;color:var(--muted);padding:12px 16px;cursor:pointer;
+             font-size:14px;border-bottom:2px solid transparent}
+  nav button.active{color:var(--gold);border-bottom-color:var(--gold)}
+  main{padding:24px;max-width:1200px;margin:0 auto}
+  .tab{display:none}.tab.active{display:block}
+  .grid{display:grid;gap:16px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .cards2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card h3{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  .kpi .n{font-size:30px;font-weight:700;color:var(--gold)}
+  .kpi .l{color:var(--muted);font-size:13px;margin-top:4px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--card)}
+  td.mono,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .done{background:rgba(0,191,165,.18);color:var(--teal)}
+  .partial{background:rgba(255,215,0,.18);color:var(--gold)}
+  .pending{background:rgba(139,147,183,.18);color:var(--muted)}
+  .db{background:rgba(0,191,165,.18);color:var(--teal)}
+  .ai{background:rgba(124,77,255,.22);color:#b39dff}
+  .hybrid{background:rgba(255,215,0,.18);color:var(--gold)}
+  .mock{background:rgba(233,30,99,.18);color:var(--pink)}
+  .compute{background:rgba(90,120,180,.25);color:#9fc0ff}
+  .ok{color:var(--teal)}.bad{color:var(--pink)}.warn{color:var(--gold)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+  .dot.ok{background:var(--teal)}.dot.bad{background:var(--pink)}.dot.warn{background:var(--gold)}
+  .bar{height:8px;border-radius:6px;background:#0d1530;overflow:hidden;margin-top:8px}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--gold))}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  input[type=search],select{background:#0d1530;border:1px solid var(--line);color:#e8ecff;
+       padding:8px 10px;border-radius:8px;font-size:13px}
+  .chip{background:#0d1530;border:1px solid var(--line);color:var(--muted);padding:6px 12px;
+        border-radius:20px;cursor:pointer;font-size:13px}
+  .chip.active{color:var(--bg);background:var(--gold);border-color:var(--gold);font-weight:600}
+  .section-hd{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px}
+  .section-hd h4{margin:0;font-size:15px;color:#e8ecff}
+  .muted{color:var(--muted)}.small{font-size:12px}
+  .feat{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .empty{color:var(--muted);text-align:center;padding:30px}
+  .scroll{max-height:460px;overflow:auto}
+  canvas{max-height:260px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔭 CosmicGuide · Dev Dashboard</h1>
+  <div class="spacer"></div>
+  <label class="auto"><input type="checkbox" id="auto" checked /> auto-refresh 5s</label>
+  <span class="stamp" id="stamp">—</span>
+</header>
+<nav id="nav">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="features">Features</button>
+  <button data-tab="logs">Logs</button>
+  <button data-tab="health">Health</button>
+  <button data-tab="endpoints">Endpoints</button>
+</nav>
+<main>
+  <section id="overview" class="tab active"></section>
+  <section id="features" class="tab"></section>
+  <section id="logs" class="tab"></section>
+  <section id="health" class="tab"></section>
+  <section id="endpoints" class="tab"></section>
+</main>
+
+<script>
+let DATA=null, timer=null, reqChart=null, statusChart=null;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num=n=>(n==null?"—":Number(n).toLocaleString());
+
+document.querySelectorAll("#nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#nav button").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); $("#"+b.dataset.tab).classList.add("active");
+  render();
+});
+$("#auto").onchange=()=>schedule();
+
+async function load(){
+  try{
+    const r=await fetch("data/dashboard.json?t="+Date.now(),{cache:"no-store"});
+    if(!r.ok) throw new Error(r.status);
+    DATA=await r.json();
+    $("#stamp").textContent="updated "+new Date(DATA.generated_at).toLocaleTimeString();
+    render();
+  }catch(e){ $("#stamp").innerHTML='<span class="bad">no data — run generate.py</span>'; }
+}
+function schedule(){ clearInterval(timer); if($("#auto").checked) timer=setInterval(load,5000); }
+function activeTab(){ return document.querySelector(".tab.active").id; }
+
+function render(){
+  if(!DATA) return;
+  ({overview:overview,features:features,logs:logs,health:health,endpoints:endpoints}[activeTab()])();
+}
+
+/* ---------- OVERVIEW ---------- */
+function overview(){
+  const L=DATA.logs, F=DATA.features.totals||{}, db=DATA.db, llm=DATA.llm||{};
+  const pct=F.total?Math.round(100*(F.done||0)/F.total):0;
+  const health=[["Ollama",llm.ollama],["iPhone",llm.iphone],["Gemini",llm.gemini]];
+  $("#overview").innerHTML=`
+    <div class="grid kpis">
+      ${kpi(num(L.total_inbound),"requests logged")}
+      ${kpi(num(L.error_count),"errors (4xx/5xx)",L.error_count?"bad":"ok")}
+      ${kpi(num(L.duplicates.length),"duplicate bursts",L.duplicates.length?"warn":"ok")}
+      ${kpi(pct+"%","features done")}
+      ${kpi((db&&db.ok)?"● up":"● down","database",(db&&db.ok)?"ok":"bad")}
+    </div>
+    <div class="grid cards2" style="margin-top:16px">
+      <div class="card"><h3>Requests over time</h3><canvas id="reqChart"></canvas></div>
+      <div class="card"><h3>Status codes</h3><canvas id="statusChart"></canvas></div>
+    </div>
+    <div class="grid cards2" style="margin-top:16px">
+      <div class="card"><h3>Feature progress</h3>
+        <div class="feat"><span>Done</span><span class="badge done">${F.done||0}</span></div>
+        <div class="feat"><span>Partial</span><span class="badge partial">${F.partial||0}</span></div>
+        <div class="feat"><span>Pending</span><span class="badge pending">${F.pending||0}</span></div>
+        <div class="bar"><i style="width:${pct}%"></i></div>
+        <div class="small muted" style="margin-top:8px">${F.done||0} of ${F.total||0} tracked items</div>
+      </div>
+      <div class="card"><h3>LLM &amp; services</h3>
+        ${health.map(([n,h])=>`<div class="feat"><span>${n}</span>${statusPill(h)}</div>`).join("")}
+      </div>
+    </div>`;
+  drawCharts();
+}
+function kpi(n,l,cls){return `<div class="card kpi"><div class="n ${cls||""}">${n}</div><div class="l">${l}</div></div>`;}
+function statusPill(h){
+  if(!h) return '<span class="muted">n/a</span>';
+  if(h.configured!==undefined&&h.status===undefined&&h.ms===undefined)
+    return h.configured?'<span class="ok">● configured</span>':'<span class="muted">○ not set</span>';
+  return h.ok?`<span class="ok">● ${h.ms??""}ms</span>`:`<span class="bad">● down</span>`;
+}
+function drawCharts(){
+  const ot=DATA.logs.over_time||{};
+  const labels=Object.keys(ot), vals=Object.values(ot);
+  reqChart&&reqChart.destroy(); statusChart&&statusChart.destroy();
+  const grid={color:"#2c3a5e"}, tick={color:"#8b93b7",maxTicksLimit:8};
+  reqChart=new Chart($("#reqChart"),{type:"line",
+    data:{labels,datasets:[{data:vals,borderColor:"#FFD700",backgroundColor:"rgba(255,215,0,.15)",
+      fill:true,tension:.3,pointRadius:0}]},
+    options:{plugins:{legend:{display:false}},scales:{x:{grid,ticks:tick},y:{grid,ticks:{color:"#8b93b7"},beginAtZero:true}}}});
+  const sc=DATA.logs.by_status||{};
+  const colr=k=>k.startsWith("2")?"#00BFA5":k.startsWith("4")?"#FFD700":k.startsWith("5")?"#E91E63":"#7C4DFF";
+  statusChart=new Chart($("#statusChart"),{type:"doughnut",
+    data:{labels:Object.keys(sc),datasets:[{data:Object.values(sc),
+      backgroundColor:Object.keys(sc).map(colr),borderColor:"#1E2A4A"}]},
+    options:{plugins:{legend:{position:"right",labels:{color:"#e8ecff"}}}}});
+}
+
+/* ---------- FEATURES ---------- */
+let featFilter="all", featQuery="";
+function features(){
+  const secs=DATA.features.sections||[], T=DATA.features.totals||{};
+  const chips=[["all","All ("+(T.total||0)+")"],["done","Done ("+(T.done||0)+")"],
+    ["partial","Partial ("+(T.partial||0)+")"],["pending","Pending ("+(T.pending||0)+")"]];
+  const body=secs.map(sec=>{
+    const items=sec.items.filter(i=>
+      (featFilter==="all"||i.status===featFilter)&&
+      (!featQuery||i.title.toLowerCase().includes(featQuery)||sec.name.toLowerCase().includes(featQuery)));
+    if(!items.length) return "";
+    const d=sec.items.filter(i=>i.status==="done").length, tot=sec.items.length;
+    const pct=tot?Math.round(100*d/tot):0;
+    return `<div class="card" style="margin-bottom:14px">
+      <div class="section-hd"><h4>${esc(sec.name)}</h4>
+        <span class="small muted">${d}/${tot} · ${pct}%</span></div>
+      <div class="bar" style="margin-bottom:6px"><i style="width:${pct}%"></i></div>
+      ${items.map(i=>`<div class="feat"><span>${esc(i.title)}</span>
+        <span class="badge ${i.status}">${i.status}</span></div>`).join("")}
+    </div>`;
+  }).join("");
+  $("#features").innerHTML=`
+    <div class="toolbar">
+      ${chips.map(([k,l])=>`<span class="chip ${featFilter===k?"active":""}" data-f="${k}">${l}</span>`).join("")}
+      <div class="spacer" style="flex:1"></div>
+      <input type="search" id="featSearch" placeholder="search features…" value="${esc(featQuery)}" />
+    </div>
+    ${body||'<div class="empty">No matching features.</div>'}`;
+  $("#features").querySelectorAll(".chip").forEach(c=>c.onclick=()=>{featFilter=c.dataset.f;features();});
+  const s=$("#featSearch"); s.oninput=()=>{featQuery=s.value.toLowerCase();features();
+    const n=$("#featSearch"); n.focus(); n.setSelectionRange(n.value.length,n.value.length);};
+}
+
+/* ---------- LOGS ---------- */
+let logQuery="";
+function logs(){
+  const L=DATA.logs;
+  const dup=L.duplicates.length?`<table><thead><tr><th>Method</th><th>Path</th><th>Query</th><th>Burst</th></tr></thead>
+    <tbody>${L.duplicates.map(d=>`<tr><td>${esc(d.method)}</td><td class="mono">${esc(d.path)}</td>
+      <td class="mono small">${esc(d.query||"")}</td><td><span class="badge partial">${d.count}× / ${d.window_s}s</span></td></tr>`).join("")}
+    </tbody></table>`:'<div class="empty">No duplicate bursts 🎉</div>';
+  const slow=`<table><thead><tr><th>Path</th><th>Query</th><th>ms</th><th>Status</th></tr></thead>
+    <tbody>${L.slowest.map(s=>`<tr><td class="mono">${esc(s.path)}</td>
+      <td class="mono small">${esc(s.query||"")}</td>
+      <td class="${(s.ms||0)>1500?"bad":(s.ms||0)>800?"warn":""}">${num(Math.round(s.ms||0))}</td>
+      <td>${statusBadge(s.status)}</td></tr>`).join("")}</tbody></table>`;
+  const top=`<table><thead><tr><th>Endpoint</th><th>Hits</th><th>avg</th><th>p95</th><th>max</th></tr></thead>
+    <tbody>${L.endpoints.map(e=>`<tr><td class="mono">${esc(e.path)}</td><td>${num(e.count)}</td>
+      <td>${e.avg_ms}</td><td>${e.p95_ms}</td><td>${e.max_ms}</td></tr>`).join("")}</tbody></table>`;
+  const recent=[...L.recent].reverse().filter(r=>{
+    if(!logQuery) return true;
+    return (r.path||"").toLowerCase().includes(logQuery)||String(r.status).includes(logQuery)||(r.method||"").toLowerCase().includes(logQuery);
+  });
+  const rec=`<table><thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th>ms</th><th>IP</th></tr></thead>
+    <tbody>${recent.map(r=>`<tr><td class="small mono">${esc((r.ts||"").slice(11,19))}</td>
+      <td>${esc(r.method)}</td><td class="mono">${esc(r.path)}${r.query?'<span class="muted small">?'+esc(r.query)+"</span>":""}</td>
+      <td>${statusBadge(r.status)}</td><td>${num(Math.round(r.duration_ms||0))}</td>
+      <td class="small mono muted">${esc(r.client_ip||"")}</td></tr>`).join("")}</tbody></table>`;
+  $("#logs").innerHTML=`
+    <div class="grid cards2">
+      <div class="card"><h3>⏱ Slowest requests</h3><div class="scroll">${slow}</div></div>
+      <div class="card"><h3>♻️ Duplicate bursts</h3><div class="scroll">${dup}</div></div>
+    </div>
+    <div class="card" style="margin-top:16px"><h3>📊 Top endpoints</h3><div class="scroll">${top}</div></div>
+    <div class="card" style="margin-top:16px">
+      <div class="toolbar"><h3 style="margin:0">🧾 Recent (${recent.length})</h3>
+        <div style="flex:1"></div>
+        <input type="search" id="logSearch" placeholder="filter path / status / method…" value="${esc(logQuery)}" /></div>
+      <div class="scroll">${rec}</div></div>`;
+  const s=$("#logSearch"); if(s){s.oninput=()=>{logQuery=s.value.toLowerCase();logs();
+    const n=$("#logSearch");n.focus();n.setSelectionRange(n.value.length,n.value.length);};}
+}
+function statusBadge(s){
+  if(s==null) return '<span class="badge pending">—</span>';
+  const c=s>=500?"mock":s>=400?"partial":"done";
+  return `<span class="badge ${c}">${s}</span>`;
+}
+
+/* ---------- HEALTH ---------- */
+function health(){
+  const llm=DATA.llm||{}, db=DATA.db||{};
+  const s=(db.ok&&db.status)?db.status:null;
+  const row=(l,v,ok)=>`<div class="feat"><span>${l}</span><span class="${ok?"ok":"bad"}">${v}</span></div>`;
+  const cnt=(l,o)=>{const ok=o.count>=o.expected;
+    return `<div class="feat"><span>${l}</span><span class="${ok?"ok":"warn"}">${o.count}/${o.expected}</span></div>`;};
+  $("#health").innerHTML=`
+    <div class="grid cards2">
+      ${llmCard("🦙 Ollama (local)",llm.ollama)}
+      ${llmCard("📱 iPhone LLM",llm.iphone)}
+      <div class="card"><h3>✨ Gemini (cloud)</h3>
+        ${llm.gemini&&llm.gemini.configured?'<div class="ok">● API key configured</div>':'<div class="muted">○ not configured — using local LLMs</div>'}
+      </div>
+      <div class="card"><h3>🗄 Database content · ${s?esc(s.date):""}</h3>
+        ${db.ok?"":`<div class="bad">${esc(db.error||"unreachable")}</div>`}
+        ${s?`
+          ${cnt("Horoscopes",s.horoscopes)}
+          ${cnt("Fortune pool",s.fortune_pool)}
+          ${row("Stories today",s.stories_today,s.stories_today>=3)}
+          ${cnt("Compatibility",s.compatibility_pairs)}
+          ${cnt("Tarot cards",s.tarot_cards)}
+          <div class="feat"><span><b>Fully populated</b></span>
+            <span class="badge ${s.fully_populated?"done":"partial"}">${s.fully_populated?"yes":"no"}</span></div>`:""}
+      </div>
+    </div>`;
+}
+function llmCard(title,h){
+  if(!h) return `<div class="card"><h3>${title}</h3><div class="muted">n/a</div></div>`;
+  const dot=h.ok?"ok":"bad";
+  return `<div class="card"><h3>${title}</h3>
+    <div><span class="dot ${dot}"></span>${h.ok?"reachable":"unreachable"} ${h.ms?`· ${h.ms}ms`:""}</div>
+    <div class="small muted mono" style="margin-top:8px">${esc(h.host||h.url||"")}</div>
+    <div class="small muted mono">model: ${esc(h.model||"—")}</div>
+    ${h.error?`<div class="small bad" style="margin-top:6px">${esc(h.error)}</div>`:""}</div>`;
+}
+
+/* ---------- ENDPOINTS ---------- */
+function endpoints(){
+  const eps=DATA.endpoints||[], byPath={};
+  (DATA.logs.endpoints||[]).forEach(e=>byPath[e.path]=e);
+  const rows=eps.map(e=>{
+    const seen=byPath[e.path];
+    return `<tr>
+      <td><span class="badge ${e.backed_by}">${esc(e.method)}</span></td>
+      <td class="mono">${esc(e.path)}</td>
+      <td><span class="badge ${e.backed_by}">${esc(e.backed_by)}</span></td>
+      <td class="small muted">${esc(e.feature||"")}</td>
+      <td>${seen?num(seen.count):'<span class="muted">—</span>'}</td>
+      <td>${seen?seen.avg_ms:""}</td>
+      <td>${e.seen?'<span class="ok">● live</span>':'<span class="muted">○ idle</span>'}</td>
+    </tr>`;}).join("");
+  $("#endpoints").innerHTML=`<div class="card"><h3>🔌 Endpoint catalog</h3>
+    <table><thead><tr><th>Method</th><th>Path</th><th>Backed by</th><th>Feature</th><th>Hits</th><th>avg ms</th><th>Traffic</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="7" class="empty">No endpoints defined.</td></tr>'}</tbody></table></div>`;
+}
+
+load(); schedule();
+</script>
+</body>
+</html>

@@ -36,6 +36,26 @@ class Horoscope(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class PeriodicHoroscope(Base):
+    """Weekly and monthly readings, cached per (period, key, system, sign)."""
+    __tablename__ = "periodic_horoscopes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period = Column(String(10), index=True)       # 'weekly' | 'monthly'
+    period_key = Column(String(10), index=True)   # e.g. '2026-W30' | '2026-07'
+    system = Column(String(10), index=True)       # 'western' | 'vedic'
+    zodiac_sign = Column(String(20), index=True)
+    general = Column(Text)
+    love = Column(Text)
+    career = Column(Text)
+    health = Column(Text)
+    overall_score = Column(Integer)
+    lucky_number = Column(String(10))
+    lucky_color = Column(String(50))
+    mood = Column(String(50))
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class TarotCard(Base):
     __tablename__ = "tarot_cards"
 

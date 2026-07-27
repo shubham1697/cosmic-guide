@@ -10,6 +10,7 @@ from config import settings
 from logger import configure_logging, get_logger
 from audit import audit_inbound, new_request_id, set_request_id
 from db.database import engine, Base, get_db
+from db import models  # noqa: F401 — register ORM models on Base.metadata before create_all
 from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic
 
 # Boot logging before anything else

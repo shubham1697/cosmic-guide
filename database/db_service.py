@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database.models import (
-    Horoscope, TarotCard, FortunePool, Compatibility, Story, FortuneHistory,
+    Horoscope, PeriodicHoroscope, TarotCard, FortunePool, Compatibility, Story, FortuneHistory,
 )
 from database.config import get_logger
 
@@ -82,6 +82,59 @@ def horoscopes_exist(db: Session, for_date: date) -> set[str]:
         .filter(Horoscope.date == for_date.isoformat())
         .all()
     }
+
+
+def save_periodic_horoscope(db: Session, data: dict, commit: bool = True) -> bool:
+    try:
+        db.add(PeriodicHoroscope(
+            period=data["period"],
+            period_key=data["period_key"],
+            system=data.get("system", "western"),
+            zodiac_sign=data["zodiac_sign"],
+            general=data.get("general", ""),
+            love=data.get("love", ""),
+            career=data.get("career", ""),
+            health=data.get("health", ""),
+            overall_score=int(data.get("overall_score", 75)),
+            lucky_number=str(data.get("lucky_number", "7")),
+            lucky_color=str(data.get("lucky_color", "Violet")),
+            mood=str(data.get("mood", "Thoughtful")),
+        ))
+        if commit:
+            db.commit()
+        return True
+    except Exception as exc:
+        logger.error("save_periodic_horoscope %s/%s/%s: %s",
+                     data.get("zodiac_sign"), data.get("period"), data.get("period_key"), exc)
+        db.rollback()
+        return False
+
+
+def periodic_horoscopes_exist(db: Session, period: str, period_key: str, system: str) -> set[str]:
+    return {
+        row.zodiac_sign
+        for row in db.query(PeriodicHoroscope.zodiac_sign).filter(
+            PeriodicHoroscope.period == period,
+            PeriodicHoroscope.period_key == period_key,
+            PeriodicHoroscope.system == system,
+        ).all()
+    }
+
+
+def delete_periodic_horoscope(db: Session, zodiac_sign: str, period: str,
+                              period_key: str, system: str, commit: bool = True) -> bool:
+    row = db.query(PeriodicHoroscope).filter(
+        PeriodicHoroscope.period == period,
+        PeriodicHoroscope.period_key == period_key,
+        PeriodicHoroscope.system == system,
+        PeriodicHoroscope.zodiac_sign == zodiac_sign,
+    ).first()
+    if row:
+        db.delete(row)
+        if commit:
+            db.commit()
+        return True
+    return False
 
 
 def _horoscope_to_dict(row: Horoscope) -> dict:

@@ -7,23 +7,41 @@ import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 import 'fortune_screen.dart';
+import 'horoscope_screen.dart';
 import 'tarot_screen.dart';
 import 'story_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final String userName;
   final String userSign;
+
+  /// The sign the daily reading is keyed on: tropical Sun (western/both) or
+  /// the sidereal Moon rashi (vedic). Shown as the headline sign.
+  final String readingSign;
+
+  /// 'western' or 'vedic' — the tradition of the current daily reading.
+  final String system;
+
+  /// True when Vedic was chosen but birth time/place are missing, so the
+  /// reading fell back to Western. Drives the "add birth details" nudge.
+  final bool needsBirthDetailsForVedic;
+
   final HoroscopeData? initialHoroscope;
   final ValueChanged<HoroscopeData>? onHoroscopeUpdated;
-  final VoidCallback onChartTap;
+
+  /// Opens the Profile tab so the user can add missing birth details.
+  final VoidCallback? onOpenProfile;
 
   const HomeScreen({
     super.key,
     required this.userName,
     required this.userSign,
+    required this.readingSign,
+    this.system = 'western',
+    this.needsBirthDetailsForVedic = false,
     this.initialHoroscope,
     this.onHoroscopeUpdated,
-    required this.onChartTap,
+    this.onOpenProfile,
   });
 
   @override
@@ -116,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _isLoading = true);
     }
     final results = await Future.wait([
-      ApiService.getHoroscope(widget.userSign),
+      ApiService.getHoroscope(widget.readingSign, system: widget.system),
       ApiService.getStories(),
     ]);
     if (mounted) {
@@ -134,7 +152,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
+    final sign = zodiacSigns.firstWhere(
+      (z) => z.name == widget.readingSign,
+      orElse: () => zodiacSigns.firstWhere((z) => z.name == widget.userSign),
+    );
     final horoscope = _horoscope;
 
     return StarryBackground(
@@ -150,6 +171,10 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildGreeting(context, sign),
+                if (widget.needsBirthDetailsForVedic) ...[
+                  const SizedBox(height: 16),
+                  _buildVedicNudge(context),
+                ],
                 const SizedBox(height: 24),
                 _buildDailyCard(context, horoscope),
                 const SizedBox(height: 24),
@@ -188,6 +213,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.textPrimary,
                 ),
               ),
+              if (widget.system == 'vedic')
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Text(
+                    'Moon sign · Janma Rashi',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.mysticTeal,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -206,9 +243,74 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildVedicNudge(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onOpenProfile,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.mysticTeal.withAlpha(20),
+          border: Border.all(color: AppColors.mysticTeal.withAlpha(102)),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.spa_outlined,
+              color: AppColors.mysticTeal,
+              size: 22,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Unlock your Vedic reading',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  const Text(
+                    'Add your birth time & place so we can find your Moon '
+                    'sign (Janma Rashi). Showing a Western reading for now.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.mysticTeal,
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildDailyCard(BuildContext context, HoroscopeData? horoscope) {
     return GestureDetector(
-      onTap: widget.onChartTap,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HoroscopeScreen(
+              userSign: widget.readingSign,
+              system: widget.system,
+              initialHoroscope: _horoscope,
+            ),
+          ),
+        );
+      },
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(

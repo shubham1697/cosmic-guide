@@ -35,6 +35,8 @@ Flags:
   -f    Fortune pool (12 signs × 5 topics)
   -c    Compatibility (78 pairs)
   -s    Stories (6 categories)
+  -w    Weekly horoscopes (12 signs, current week)
+  -m    Monthly horoscopes (12 signs, current month)
   -S    Seed static data only (no LLM needed)
   -F    Force regenerate even if data exists
   -d    Target date (YYYY-MM-DD), default: today
@@ -74,6 +76,8 @@ while [[ $# -gt 0 ]]; do
           f) ARGS+=(--fortunes) ;;
           c) ARGS+=(--compatibility) ;;
           s) ARGS+=(--stories) ;;
+          w) ARGS+=(--weekly) ;;
+          m) ARGS+=(--monthly) ;;
           S) ARGS+=(--seed) ;;
           F) ARGS+=(--force) ;;
           *) echo "Unknown flag: -$flag"; show_help ;;

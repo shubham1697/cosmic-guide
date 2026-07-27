@@ -25,6 +25,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _birthPlaceRawText = '';
   bool _showBirthPlaceError = false;
   bool _isRevealing = false;
+  String _tradition = 'both';
 
   @override
   void dispose() {
@@ -59,7 +60,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _goToNext() {
-    if (_currentPage < 3) {
+    if (_currentPage < 4) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
@@ -128,6 +129,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('userName', _nameController.text);
     await prefs.setString('userSign', _selectedSign!);
+    await prefs.setString('tradition', _tradition);
     await prefs.setBool('onboarded', true);
     if (_birthTime != null) {
       await prefs.setString(
@@ -161,6 +163,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               _buildWelcomePage(),
               _buildNamePage(),
               _buildBirthPage(),
+              _buildTraditionPage(),
               _buildBirthDetailsPage(),
             ],
           ),
@@ -464,10 +467,170 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  Widget _buildTraditionPage() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 24),
+          const Icon(Icons.auto_awesome, color: AppColors.mysticTeal, size: 56),
+          const SizedBox(height: 24),
+          Text(
+            'How do you read the stars?',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Pick the tradition you follow — or explore both. You can change this anytime.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+          ),
+          const SizedBox(height: 28),
+          _buildTraditionOption(
+            value: 'western',
+            icon: Icons.wb_sunny_outlined,
+            color: AppColors.accent,
+            title: 'Western',
+            subtitle:
+                'Tropical zodiac · Sun-sign horoscopes, birth chart, tarot',
+          ),
+          _buildTraditionOption(
+            value: 'vedic',
+            icon: Icons.spa_outlined,
+            color: AppColors.mysticTeal,
+            title: 'Vedic',
+            subtitle: 'Sidereal zodiac · Moon sign (rashi), Kundli, Panchang',
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.card,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.mysticTeal.withAlpha(51)),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, color: AppColors.mysticTeal, size: 18),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Good to know: the two systems differ by ~24°, so in Vedic '
+                    'astrology your Sun is often the previous sign.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _goToNext,
+              child: const Text('Continue'),
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextButton(
+            onPressed: () {
+              setState(() => _tradition = 'both');
+              _goToNext();
+            },
+            child: const Text(
+              'Not sure? Explore both for now',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildPageIndicator(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTraditionOption({
+    required String value,
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String subtitle,
+  }) {
+    final isSelected = _tradition == value;
+    return GestureDetector(
+      onTap: () => setState(() => _tradition = value),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.accent
+                : AppColors.textMuted.withAlpha(51),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withAlpha(30),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              const Icon(Icons.check_circle, color: AppColors.accent, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPageIndicator() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(4, (index) {
+      children: List.generate(5, (index) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           margin: const EdgeInsets.symmetric(horizontal: 4),

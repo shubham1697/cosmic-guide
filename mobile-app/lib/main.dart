@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'models/zodiac.dart';
 import 'services/api_service.dart';
+import 'services/sign_resolver.dart';
 import 'screens/home_screen.dart';
 import 'screens/chart_screen.dart';
 import 'screens/vedic_home_screen.dart';
@@ -94,6 +95,8 @@ class _AppEntryState extends State<AppEntry> {
   }
 }
 
+enum AppTab { home, chart, vedic, match, profile }
+
 class MainShell extends StatefulWidget {
   final String userName;
   final String userSign;
@@ -112,25 +115,65 @@ class _MainShellState extends State<MainShell> {
   String _birthDate = '';
   String _birthTime = '';
   String _birthPlace = '';
+  String _tradition = 'both';
+
+  // Resolved reading identity (see SignResolver): which sign + system the
+  // daily reading is keyed on. Western/Both use the tropical Sun sign; Vedic
+  // uses the sidereal Moon rashi. Defaults track the Sun sign until resolved.
+  String _readingSign = '';
+  String _system = 'western';
+  bool _needsBirthDetailsForVedic = false;
+
+  // Tabs shown depend on the chosen reading tradition. 'both' (default) sees
+  // everything; 'western'/'vedic' get a focused nav.
+  List<AppTab> get _visibleTabs => switch (_tradition) {
+    'western' => const [
+      AppTab.home,
+      AppTab.chart,
+      AppTab.match,
+      AppTab.profile,
+    ],
+    'vedic' => const [AppTab.home, AppTab.vedic, AppTab.match, AppTab.profile],
+    _ => const [
+      AppTab.home,
+      AppTab.chart,
+      AppTab.vedic,
+      AppTab.match,
+      AppTab.profile,
+    ],
+  };
 
   @override
   void initState() {
     super.initState();
     _userName = widget.userName;
     _userSign = widget.userSign;
-    _fetchSharedHoroscope();
-    _loadBirthData();
+    _readingSign = widget.userSign;
+    _init();
+  }
+
+  // Birth data (tradition + birth details) must be loaded before the horoscope
+  // is fetched, because the reading identity depends on them.
+  Future<void> _init() async {
+    await _loadBirthData();
+    await _fetchSharedHoroscope();
   }
 
   Future<void> _loadBirthData() async {
     final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _birthDate = prefs.getString('birthDate') ?? '';
-        _birthTime = prefs.getString('birthTime') ?? '';
-        _birthPlace = prefs.getString('birthPlace') ?? '';
-      });
-    }
+    if (!mounted) return;
+    // Remember the current tab so we can keep the user on it if the visible
+    // set changes (e.g. they switched tradition in Profile).
+    final currentTab =
+        _visibleTabs[_currentIndex.clamp(0, _visibleTabs.length - 1)];
+    setState(() {
+      _birthDate = prefs.getString('birthDate') ?? '';
+      _birthTime = prefs.getString('birthTime') ?? '';
+      _birthPlace = prefs.getString('birthPlace') ?? '';
+      _tradition = prefs.getString('tradition') ?? 'both';
+      final idx = _visibleTabs.indexOf(currentTab);
+      _currentIndex = idx == -1 ? 0 : idx;
+    });
   }
 
   @override
@@ -148,8 +191,25 @@ class _MainShellState extends State<MainShell> {
   }
 
   Future<void> _fetchSharedHoroscope() async {
-    final data = await ApiService.getHoroscope(_userSign);
-    if (mounted) setState(() => _sharedHoroscope = data);
+    final identity = await SignResolver.resolve(
+      tradition: _tradition,
+      sunSign: _userSign,
+      birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+      birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+      birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+    );
+    final data = await ApiService.getHoroscope(
+      identity.readingSign,
+      system: identity.system,
+    );
+    if (mounted) {
+      setState(() {
+        _readingSign = identity.readingSign;
+        _system = identity.system;
+        _needsBirthDetailsForVedic = identity.needsBirthDetailsForVedic;
+        _sharedHoroscope = data;
+      });
+    }
   }
 
   void _updateSharedHoroscope(HoroscopeData data) {
@@ -164,12 +224,23 @@ class _MainShellState extends State<MainShell> {
       _userSign = sign;
       _sharedHoroscope = null;
     });
-    _fetchSharedHoroscope();
-    _loadBirthData();
+    _reloadForProfileChange();
+  }
+
+  // Reload birth data first (tradition / birth details may have changed), then
+  // re-resolve and fetch the horoscope so the identity stays consistent.
+  Future<void> _reloadForProfileChange() async {
+    await _loadBirthData();
+    await _fetchSharedHoroscope();
   }
 
   void _navigateToTab(int index) {
     setState(() => _currentIndex = index);
+  }
+
+  void _navigateToAppTab(AppTab tab) {
+    final idx = _visibleTabs.indexOf(tab);
+    if (idx != -1) setState(() => _currentIndex = idx);
   }
 
   Future<bool> _onWillPop() async {
@@ -213,34 +284,9 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      HomeScreen(
-        userName: _userName,
-        userSign: _userSign,
-        initialHoroscope: _sharedHoroscope,
-        onHoroscopeUpdated: _updateSharedHoroscope,
-        onChartTap: () => _navigateToTab(1),
-      ),
-      ChartScreen(
-        userSign: _userSign,
-        initialHoroscope: _sharedHoroscope,
-        onHoroscopeUpdated: _updateSharedHoroscope,
-        birthDate: _birthDate.isNotEmpty ? _birthDate : null,
-        birthTime: _birthTime.isNotEmpty ? _birthTime : null,
-        birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
-      ),
-      VedicHomeScreen(
-        birthDate: _birthDate.isNotEmpty ? _birthDate : null,
-        birthTime: _birthTime.isNotEmpty ? _birthTime : null,
-        birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
-      ),
-      const MatchScreen(),
-      ProfileScreen(
-        userSign: _userSign,
-        userName: _userName,
-        onProfileUpdated: _onProfileUpdated,
-      ),
-    ];
+    final tabs = _visibleTabs;
+    final safeIndex = _currentIndex.clamp(0, tabs.length - 1);
+    final screens = tabs.map(_screenFor).toList();
 
     return PopScope(
       canPop: false,
@@ -252,7 +298,7 @@ class _MainShellState extends State<MainShell> {
         }
       },
       child: Scaffold(
-        body: IndexedStack(index: _currentIndex, children: screens),
+        body: IndexedStack(index: safeIndex, children: screens),
         bottomNavigationBar: Container(
           decoration: BoxDecoration(
             color: AppColors.secondary,
@@ -265,38 +311,72 @@ class _MainShellState extends State<MainShell> {
             ],
           ),
           child: BottomNavigationBar(
-            currentIndex: _currentIndex,
+            currentIndex: safeIndex,
             onTap: _navigateToTab,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.auto_awesome_outlined),
-                activeIcon: Icon(Icons.auto_awesome),
-                label: 'Chart',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.spa_outlined),
-                activeIcon: Icon(Icons.spa),
-                label: 'Vedic',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.favorite_outline),
-                activeIcon: Icon(Icons.favorite),
-                label: 'Match',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
+            items: tabs.map(_navItemFor).toList(),
           ),
         ),
       ),
     );
   }
+
+  Widget _screenFor(AppTab tab) => switch (tab) {
+    AppTab.home => HomeScreen(
+      userName: _userName,
+      userSign: _userSign,
+      readingSign: _readingSign.isNotEmpty ? _readingSign : _userSign,
+      system: _system,
+      needsBirthDetailsForVedic: _needsBirthDetailsForVedic,
+      initialHoroscope: _sharedHoroscope,
+      onHoroscopeUpdated: _updateSharedHoroscope,
+      onOpenProfile: () => _navigateToAppTab(AppTab.profile),
+    ),
+    AppTab.chart => ChartScreen(
+      userSign: _userSign,
+      initialHoroscope: _sharedHoroscope,
+      onHoroscopeUpdated: _updateSharedHoroscope,
+      birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+      birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+      birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+    ),
+    AppTab.vedic => VedicHomeScreen(
+      birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+      birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+      birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+    ),
+    AppTab.match => const MatchScreen(),
+    AppTab.profile => ProfileScreen(
+      userSign: _userSign,
+      userName: _userName,
+      onProfileUpdated: _onProfileUpdated,
+    ),
+  };
+
+  BottomNavigationBarItem _navItemFor(AppTab tab) => switch (tab) {
+    AppTab.home => const BottomNavigationBarItem(
+      icon: Icon(Icons.home_outlined),
+      activeIcon: Icon(Icons.home),
+      label: 'Home',
+    ),
+    AppTab.chart => const BottomNavigationBarItem(
+      icon: Icon(Icons.auto_awesome_outlined),
+      activeIcon: Icon(Icons.auto_awesome),
+      label: 'Chart',
+    ),
+    AppTab.vedic => BottomNavigationBarItem(
+      icon: const Icon(Icons.spa_outlined),
+      activeIcon: const Icon(Icons.spa),
+      label: _tradition == 'vedic' ? 'Kundli' : 'Vedic',
+    ),
+    AppTab.match => const BottomNavigationBarItem(
+      icon: Icon(Icons.favorite_outline),
+      activeIcon: Icon(Icons.favorite),
+      label: 'Match',
+    ),
+    AppTab.profile => const BottomNavigationBarItem(
+      icon: Icon(Icons.person_outline),
+      activeIcon: Icon(Icons.person),
+      label: 'Profile',
+    ),
+  };
 }

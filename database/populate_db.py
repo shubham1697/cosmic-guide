@@ -53,10 +53,11 @@ from database.data.compatibility_data import SIGN_PAIR_SCORES
 from database.data.tarot_data import TAROT_CARDS
 from database.db_service import (
     save_horoscope, delete_horoscope, horoscopes_exist,
+    save_periodic_horoscope, periodic_horoscopes_exist, delete_periodic_horoscope,
     save_tarot_card, tarot_names_in_db, tarot_count,
     save_fortune_pool, delete_fortune_pool, fortune_pool_exists,
     save_compatibility, compatibility_pairs_exist,
-    save_story, delete_all_stories, story_count,
+    save_story, story_count,
     get_content_status,
 )
 
@@ -646,6 +647,109 @@ def populate_horoscopes(db, target_date: date, force: bool = False) -> int:
     return generated
 
 
+def _period_bounds(period: str, today: date):
+    """Return (period_key, start_date, end_date) for the week or month of `today`.
+
+    Mirrors backend horoscope_service._period_bounds so the keys match exactly:
+      weekly  -> 'YYYY-Www' (ISO week, Monday-Sunday)
+      monthly -> 'YYYY-MM'  (calendar month)
+    """
+    if period == "monthly":
+        start = today.replace(day=1)
+        if start.month == 12:
+            nxt = start.replace(year=start.year + 1, month=1)
+        else:
+            nxt = start.replace(month=start.month + 1)
+        end = nxt - timedelta(days=1)
+        return f"{today.year}-{today.month:02d}", start, end
+    iso_year, iso_week, _ = today.isocalendar()
+    start = today - timedelta(days=today.weekday())
+    end = start + timedelta(days=6)
+    return f"{iso_year}-W{iso_week:02d}", start, end
+
+
+def _period_prompt(zodiac_sign: str, period: str, start: date, end: date) -> str:
+    """Weekly/monthly Western Sun-sign prompt — mirrors the backend period prompt."""
+    if period == "monthly":
+        cadence = "month"
+        span = start.strftime("%B %Y")
+        arc = "Cover the month's overall arc and how the energy shifts across its weeks."
+    else:
+        cadence = "week"
+        span = f"{start.strftime('%b %d')} - {end.strftime('%b %d, %Y')}"
+        arc = "Cover the week's arc from start to finish and note a couple of standout days."
+    return (
+        f"Generate a complete {cadence}ly horoscope for {zodiac_sign} for the {cadence} of {span}.\n"
+        "Respond with ONLY a single-line, compact, valid JSON object. "
+        "No markdown, no code fences, and no line breaks inside any value. "
+        f"Speak to the {cadence} as a whole, not a single day. Use exactly these keys:\n"
+        f'{{"zodiac_sign":"{zodiac_sign}",'
+        f'"general":"overall {cadence} theme in 70-100 words. {arc}",'
+        f'"love":"romantic and relationship outlook for the {cadence}, 70-100 words",'
+        f'"career":"professional and financial guidance for the {cadence}, 70-100 words",'
+        f'"health":"physical and mental wellness for the {cadence}, 70-100 words",'
+        '"overall_score": <integer 60-95>,'
+        '"lucky_number":"a single lucky number as a string",'
+        f'"lucky_color":"one color for {zodiac_sign} this {cadence}",'
+        f'"mood":"one word for the {cadence} tone"}}'
+    )
+
+
+def populate_periodic(db, target_date: date, period: str, force: bool = False) -> int:
+    """Generate weekly or monthly (Western) horoscopes for the period of target_date."""
+    period_key, start, end = _period_bounds(period, target_date)
+    system = "western"
+    generated = 0
+
+    existing = periodic_horoscopes_exist(db, period, period_key, system)
+    log.info("%s horoscopes for %s: %d/12 already exist",
+             period.capitalize(), period_key, len(existing))
+
+    for sign in ZODIAC_SIGNS:
+        if sign in existing and not force:
+            log.info("  [SKIP] %s — already exists", sign)
+            continue
+        if sign in existing and force:
+            delete_periodic_horoscope(db, sign, period, period_key, system)
+
+        log.info("  [GEN] %s %s ...", period, sign)
+        prompt = _period_prompt(sign, period, start, end)
+
+        try:
+            raw = _llm_generate(prompt, max_tokens=700)
+        except RuntimeError as exc:
+            log.error("  [ABORT] LLM fatal error — stopping: %s", exc)
+            break
+        if not raw:
+            log.error("  [FAIL] %s — empty LLM response", sign)
+            continue
+        data = _parse_json(raw, log_error=False)
+        if not isinstance(data, dict):
+            data = _extract_horoscope_fields(raw)
+            if isinstance(data, dict):
+                log.warning("  [RECOVER] %s — parsed via fallback field extraction", sign)
+            else:
+                _parse_json(raw, log_error=True)
+        if not isinstance(data, dict):
+            log.error("  [FAIL] %s — bad response | raw[:200]: %s", sign, raw[:200])
+            continue
+
+        data["zodiac_sign"] = sign
+        data["period"] = period
+        data["period_key"] = period_key
+        data["system"] = system
+
+        if save_periodic_horoscope(db, data):
+            log.info("  [OK] %s  score=%s  mood=%s",
+                      sign, data.get("overall_score"), data.get("mood"))
+            generated += 1
+        else:
+            log.error("  [FAIL] %s — DB error", sign)
+
+    log.info("%s horoscopes: %d/%d generated", period.capitalize(), generated, len(ZODIAC_SIGNS))
+    return generated
+
+
 def populate_tarot(db, force: bool = False) -> int:
     existing_names = tarot_names_in_db(db)
     generated = 0
@@ -817,8 +921,7 @@ def populate_stories(db, force: bool = False) -> int:
         return 0
 
     if force:
-        deleted = delete_all_stories(db)
-        log.info("Deleted %d existing stories", deleted)
+        log.info("Force mode — adding a fresh set of stories; %d existing kept", existing_count)
 
     for category in STORY_CATEGORIES:
         log.info("  [GEN] Story: %s ...", category)
@@ -999,6 +1102,8 @@ def main():
     parser.add_argument("--fortunes", action="store_true", help="Generate fortune pools")
     parser.add_argument("--compatibility", action="store_true", help="Generate compatibility descriptions")
     parser.add_argument("--stories", action="store_true", help="Generate cosmic stories")
+    parser.add_argument("--weekly", action="store_true", help="Generate weekly horoscopes (current week)")
+    parser.add_argument("--monthly", action="store_true", help="Generate monthly horoscopes (current month)")
     parser.add_argument("--vedic", action="store_true", help="Generate AI Vedic reference mock content")
     parser.add_argument("--seed", action="store_true", help="Seed static data (tarot cards + compatibility scores)")
     parser.add_argument("--force", action="store_true", help="Regenerate even if data exists")
@@ -1012,7 +1117,8 @@ def main():
     target_date = date.fromisoformat(args.date) if args.date else date.today()
     num_days = max(1, args.days)
     run_all = not any([args.horoscopes, args.tarot, args.fortunes,
-                       args.compatibility, args.stories, args.vedic, args.seed, args.status])
+                       args.compatibility, args.stories, args.weekly, args.monthly,
+                       args.vedic, args.seed, args.status])
 
     db = SessionLocal()
 
@@ -1072,6 +1178,16 @@ def main():
                 log.info("")
 
         # Non-date-sensitive content: run once
+        if run_all or args.weekly:
+            log.info("━━━ WEEKLY HOROSCOPES ━━━")
+            populate_periodic(db, target_date, "weekly", args.force)
+            log.info("")
+
+        if run_all or args.monthly:
+            log.info("━━━ MONTHLY HOROSCOPES ━━━")
+            populate_periodic(db, target_date, "monthly", args.force)
+            log.info("")
+
         if run_all or args.tarot:
             log.info("━━━ TAROT CARDS ━━━")
             populate_tarot(db, args.force)

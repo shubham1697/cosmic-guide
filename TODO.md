@@ -1,10 +1,104 @@
 # CosmicGuide - Detailed Feature Tracker
 
-> Last updated: April 22, 2026
+> Last updated: July 24, 2026
 
 ## 🐛 Bugs / Investigations
 
-- [ ] **Tarot cards not loading** — `ApiService.drawTarotCard()` returns null (backend returns non-200 or times out). Investigate: check if `tarot_cards` DB table is seeded on startup, verify `/api/v1/tarot/draw` responds correctly, check backend logs for errors. Data must come from backend — no mock fallback.
+- [x] **Today's Horoscope opened the Kundli screen in Vedic mode** — FIXED (Jul 24). The daily card was wired to `onChartTap`, which falls back to the Vedic/Kundli tab when there is no Chart tab (Vedic navigation). It now pushes the detailed `HoroscopeScreen` directly, threaded with the resolved `system` (`western`/`vedic`), so it behaves the same in every tradition. This also repurposes the previously orphaned `lib/screens/horoscope_screen.dart`. Files: `lib/screens/home_screen.dart`, `lib/screens/horoscope_screen.dart`, `lib/main.dart`.
+- [~] **Tarot cards not loading** — Likely resolved: `backend/logs/audit.log` shows `/api/v1/tarot/draw` returning `200` consistently, and the home screen caches a daily draw. Re-verify once on-device, then close. Data comes from the backend (with a local-deck fallback).
+
+---
+
+## 📊 Status Update — July 24, 2026
+
+### ✅ Recently Completed (verified in code)
+
+- **Natal / birth chart engine** — backend `POST /api/v1/chart/birth`, `POST /api/v1/chart/vedic`, `GET /api/v1/chart/transits` (`backend/api/chart.py`); Flutter chart wheel with 10 planets, houses, ascendant/MC, Big 3, nakshatra, and live transits (`lib/screens/chart_screen.dart`). This closes the "single biggest gap" called out in `COMPETITOR_ANALYSIS.md`.
+- **Dual-tradition reforms R1–R4** — tradition capture, tradition-aware daily reading (`?system=western|vedic`), Moon-rashi sign resolver, and adaptive navigation (see the Reforms section below).
+- **Splash screen** — `lib/screens/splash_screen.dart`, wired in `main.dart`.
+- **Tarot 3-card spread** — `lib/screens/tarot_spread_screen.dart`, reachable from the Tarot screen.
+- **Daily tarot card** — auto-drawn once per day and cached in SharedPreferences (`home_screen.dart`).
+- **North/South Indian Kundli chart** — `lib/screens/kundli_chart_screen.dart`, opened from the Vedic hub.
+- **Astrology glossary** — `lib/screens/astro_glossary_screen.dart` (tropical vs sidereal explainer).
+- **Vedic home summary** — `GET /api/v1/vedic/home-summary` (`backend/api/vedic.py`) + `lib/screens/vedic_home_screen.dart`.
+
+### 🔧 Improvements / Fixes Needed (highest value first)
+
+- **[P0] AI reliability & latency** — `backend/logs/audit.log` shows the horoscope path taking **60–80s** and usually failing: Ollama (`192.168.29.159:11434`) returns `Connection refused` on every call and the iPhone-LLM fallback mostly errors. Likely causes: no `GEMINI_API_KEY` set (auto mode never reaches the cloud provider) and 360s provider timeouts in `shared/llm_config.py`. Fix: set `GEMINI_API_KEY`, cut connect timeouts to 1–2s with fast failover, health-check/skip dead providers, and pre-generate + cache daily horoscopes (`generate_all_horoscopes()` already exists).
+- **Client request de-duplication** — the app fires the same horoscope call 3–4× simultaneously (repeated identical requests in `audit.log`). Coalesce in `lib/services/api_service.dart` / `MainShell`.
+- **Stale client path** — `GET /api/v1/horoscope/aries` returns 404 somewhere; should be `/horoscope/today?zodiac_sign=`.
+- **Weekly / monthly horoscope** — still only `today`. Near-zero-effort, high-impact backend addition that can reuse the existing UI.
+- **Slow `/vedic/home-summary`** — consistently 2.5–4.5s; cache or precompute.
+
+### 🗑️ Cleanup / Removal Candidates
+
+- **`lib/screens/discover_screen.dart`** — built but not wired into navigation or pushed anywhere. Either surface it (e.g. a Discover/Stories tab) or remove it.
+- **Mock-data fallbacks** — decide a policy: `horoscope_mock_data.dart`, `tarot_deck_data.dart`, and `stories_mock_data.dart` still ship as offline fallbacks; consolidate or gate behind a debug flag.
+- **Duplicated data layers** — `backend/data/` vs `database/data/` overlap (compatibility, fortune, tarot, zodiac); consolidate to one source of truth.
+
+### 💡 New Feature Ideas (from competitor analysis, adjusted for what already exists)
+
+- **Push notifications (FCM)** — the #1 retention driver; still not started.
+- **Real streak & reading history** — profile stats are hardcoded (`7 days`); persist tarot/fortune/horoscope draws.
+- **Shareable chart card** — `RepaintBoundary` → PNG → share sheet; cheap viral loop.
+- **Ask the Oracle** — free-text question → AI answer with astrological framing.
+- **"Both" compare view** — Western Sun vs Vedic Moon-rashi reading side by side (R5 remaining).
+
+---
+
+## 🚀 TOP PRIORITY — Dual-Tradition Reforms (Western + Vedic)
+
+> Cross-cutting work to make the app usable **and** astrologically plausible for both audiences.
+> Vedic users now get a Moon-rashi (Janma Rashi) daily reading via `system=vedic` once birth
+> time + place are known; otherwise the app nudges them and falls back to a Western reading.
+> **Order:** R1 + R4 (quick wins) → R2 + R3 (keystone) → R5 (polish).
+> **Progress:** R1 ✅ · R2 ✅ (backend) · R3 ✅ · R4 ✅ (nav-level) · R5 🚧 (glossary + North/South done; terminology & "both" compare remain).
+>
+> **Decision (settled):** adaptive single-tradition per user, with a **"Both" default** — navigation
+> and the daily-reading emphasis adapt to the chosen tradition.
+
+### R1. Tradition preference — capture ✅ DONE
+
+**Files:** `lib/screens/onboarding_screen.dart`, `lib/screens/profile_screen.dart`
+
+- [x] **Onboarding tradition step** — added page 4/5 ("How do you read the stars?" → Western / Vedic / Both / Not sure); saves `tradition` via SharedPreferences in `_completeOnboarding` (default `both`)
+- [x] **Profile tradition toggle** — editable selector (chips) in `_EditProfileSheet` + "Reading style" badge on profile
+- [x] **Sign-difference education** — info box on tradition step explaining the ~24° sidereal shift ("your Vedic Sun is often the previous sign")
+
+### R2. Tradition-aware daily reading — KEYSTONE — ✅ DONE (backend)
+
+**Files:** `backend/api/horoscope.py`, `backend/services/horoscope_service.py`, `backend/services/ai_prompts.py`, `backend/services/ai_service.py`
+
+- [x] **Sidereal reading path** — `/today` now takes `?system=western|vedic` (default western). Vedic uses new `vedic_horoscope_prompt(moon_rashi, date)` (Jyotishi framing on the Janma/Moon rashi, Sanskrit name + rashi lord via `RASHI_INFO`), same JSON shape → schema & mobile unchanged
+- [x] **Cache key update** — in-memory cache key is now `(sign, system, date)`
+- [x] **System threaded end-to-end** — `today_horoscope` → `get_horoscope(sign, system, db)` → `generate_daily_horoscope(sign, date, system)`. Western stays fully DB-backed; **Vedic uses memory + AI + template only (no DB persistence)** to avoid a `horoscopes` schema migration (no `system` column; `create_all` won't alter existing tables)
+- [ ] _Deferred:_ nakshatra-level detail + Vedic DB persistence (needs `system` column + migration)
+- [x] _R3 scope:_ resolve WHICH rashi is the user's Moon sign (client-side, via existing sidereal `/chart/vedic`) and pass it as `zodiac_sign` with `system=vedic` — **done in R3**
+
+### R3. Sign-identity resolver — consistency — ✅ DONE
+
+**Files:** `lib/services/sign_resolver.dart` (new), `lib/services/api_service.dart`, `lib/main.dart`, `lib/screens/home_screen.dart`
+
+- [x] **Resolver** — new `SignResolver.resolve(tradition, sunSign, birth…)` → `ReadingIdentity(readingSign, system)`. Western/Both → tropical Sun + `system=western`; Vedic → sidereal **Moon rashi** (Janma Rashi) + `system=vedic`. Moon sign is fetched once via `/chart/vedic` and cached in SharedPreferences (`vedicMoonSign`, keyed on birth inputs so it auto-invalidates)
+- [x] **Wired end-to-end** — `getHoroscope(sign, {system})` now appends `&system=`; MainShell resolves identity before fetching (loads birth data first) and passes `readingSign`/`system` to Home; Home fetches + displays the resolved sign, with a "Moon sign · Janma Rashi" subtitle in Vedic mode
+- [x] **Gate Vedic on birth time + place** — Vedic chosen but time/place missing → falls back to Western **and** Home shows a tap-to-fix nudge ("Add your birth time & place…") that opens Profile. Transient chart-fetch failures fall back silently (no nag)
+- [ ] _Deferred (R5):_ sidereal-Sun identity display, nakshatra-level reading, and making the standalone `horoscope_screen.dart` / `chart_screen.dart` (Western surfaces) tradition-aware
+
+### R4. Adaptive navigation & framing — ✅ nav done (deep terms → R5)
+
+**Files:** `lib/main.dart`
+
+- [x] **Conditional tabs** — tab set built in `_MainShellState` from `tradition` (`both`→all 5; `western`→Home/Chart/Match/Profile; `vedic`→Home/Kundli/Match/Profile); selected tab is preserved when the set changes
+- [~] **Per-tradition labels** — nav-level done (Vedic tab reads "Kundli" for Vedic users); in-screen Rising↔Lagna / Birth Chart↔Kundli deferred to R5 Jyotish terminology
+
+### R5. Authenticity polish — 🚧 in progress
+
+**Files:** `lib/screens/astro_glossary_screen.dart` (new), `lib/screens/vedic_home_screen.dart`, `lib/screens/kundli_chart_screen.dart`, `lib/screens/match_screen.dart`
+
+- [ ] **Jyotish terminology** in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — _kundli chart already uses Lagna/Nakshatra; audit + fold in R4-deferred Rising↔Lagna / Birth Chart↔Kundli relabels_
+- [x] **Glossary / "why signs differ"** explainer screen — new `AstroGlossaryScreen` (tropical vs. sidereal + ~24° Lahiri ayanamsa, plus Jyotish & Western term cards). Reachable via **Profile → Astrology Guide**. `flutter analyze` clean
+- [x] **Vedic wheel defaults to North/South** — already satisfied: `kundli_chart_screen.dart` defaults to `_KundliChartStyle.north` and uses Lagna/Nakshatra terminology (verified in R5)
+- [ ] **"Both" compare view** — reuse the Match screen's Western/Vedic tab pattern (Western Sun reading vs. Vedic Moon-rashi reading side by side)
 
 ---
 
@@ -128,8 +222,8 @@ Backend, auth, navigation, and infrastructure are **shared** across both tracks.
   - 14 Pentacles (Earth): Ace through King
 - [x] Card interpretations — pre-generated data for all 78 cards (see Hybrid Model below)
 - [x] Reversed card option — 30% chance reversed, 180° rotation, red glow/border, "Reversed" badge, unique reversed interpretations for all 78 cards
-- [ ] Daily card of the day — auto-draw one card per day, cache result
-- [ ] Card spread layouts — 3-card spread (past/present/future), Celtic Cross
+- [x] Daily card of the day — auto-draw one card per day, cache result
+- [~] Card spread layouts — 3-card spread built (`lib/screens/tarot_spread_screen.dart`); Celtic Cross still pending
 - [ ] Card history / journal — save drawn cards with date, let user add notes
 - [ ] Card animation sound effects — swipe/flip audio feedback
 - [x] Backend integration — GET /tarot/draw, falls back to local mock deck
@@ -399,7 +493,7 @@ Backend, auth, navigation, and infrastructure are **shared** across both tracks.
 - [x] Star color: gold (`#FFD700`) with varying alpha
 
 #### Pending UI Enhancements
-- [ ] Splash screen — app logo + loading animation on startup
+- [x] Splash screen — app logo + loading animation on startup (`lib/screens/splash_screen.dart`)
 - [ ] App icon — custom icon for Android & iOS
 - [ ] Lottie/Rive animations — replace simple loading spinners with rich animations
 - [ ] Shimmer loading — skeleton placeholders while data loads

@@ -34,29 +34,84 @@ class ApiService {
   // Render free tier can take 15-30s to cold-start; use a generous timeout.
   static const _timeout = Duration(seconds: 20);
 
+  // ── Request de-duplication + short-lived cache ───────────────────────────
+  // The Home, Chart and Vedic tabs all live in an IndexedStack (they stay alive)
+  // and each fetches the same read endpoints, so identical GETs tend to fire at
+  // once and on every rebuild. These maps coalesce identical in-flight requests
+  // and briefly cache their parsed result, keyed by the full request URL.
+  static final Map<String, Future<Object?>> _inFlight = {};
+  static final Map<String, ({DateTime at, Object? value})> _responseCache = {};
+
+  /// Coalesce and briefly cache an idempotent read.
+  ///
+  /// Returns a fresh cached value (within [ttl]) without a network call; shares
+  /// the same Future when an identical request is already running. Only non-null
+  /// results are cached, so failures retry immediately.
+  static Future<T?> _dedup<T>(
+    String key,
+    Future<T?> Function() fetch, {
+    Duration ttl = const Duration(minutes: 2),
+  }) {
+    final cached = _responseCache[key];
+    if (cached != null && DateTime.now().difference(cached.at) < ttl) {
+      return Future.value(cached.value as T?);
+    }
+    final existing = _inFlight[key];
+    if (existing != null) {
+      return existing.then((v) => v as T?);
+    }
+    final future = fetch();
+    _inFlight[key] = future;
+    return future
+        .then((result) {
+          if (result != null) {
+            _responseCache[key] = (at: DateTime.now(), value: result);
+          }
+          return result;
+        })
+        .whenComplete(() {
+          _inFlight.remove(key);
+        });
+  }
+
   /// Fetch today's horoscope for a sign. Returns null on failure.
-  static Future<HoroscopeData?> getHoroscope(String sign) async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/horoscope/today?zodiac_sign=$sign'))
-          .timeout(_timeout);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return HoroscopeData(
-          sign: data['sign'],
-          date: data['date'],
-          general: data['general'],
-          love: data['love'],
-          career: data['career'],
-          health: data['health'],
-          overallScore: data['overallScore'],
-          luckyNumber: data['luckyNumber'],
-          luckyColor: data['luckyColor'],
-          mood: data['mood'],
-        );
-      }
-    } catch (_) {}
-    return null;
+  ///
+  /// [system] selects the tradition: 'western' (tropical Sun sign) or 'vedic'
+  /// (sidereal reading keyed on the Moon rashi / Janma Rashi).
+  static Future<HoroscopeData?> getHoroscope(
+    String sign, {
+    String system = 'western',
+    String period = 'daily',
+  }) {
+    final path = period == 'weekly'
+        ? 'weekly'
+        : period == 'monthly'
+        ? 'monthly'
+        : 'today';
+    final url = '$_baseUrl/horoscope/$path?zodiac_sign=$sign&system=$system';
+    // Weekly/monthly may be generated on-demand by a local LLM — allow longer.
+    final timeout = period == 'daily' ? _timeout : const Duration(seconds: 35);
+    return _dedup<HoroscopeData>(url, () async {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(timeout);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          return HoroscopeData(
+            sign: data['sign'],
+            date: data['date'],
+            general: data['general'],
+            love: data['love'],
+            career: data['career'],
+            health: data['health'],
+            overallScore: data['overallScore'],
+            luckyNumber: data['luckyNumber'],
+            luckyColor: data['luckyColor'],
+            mood: data['mood'],
+          );
+        }
+      } catch (_) {}
+      return null;
+    });
   }
 
   /// Draw a random tarot card. Returns null on failure.
@@ -204,27 +259,30 @@ class ApiService {
 
   /// Fetch cosmic stories. Returns empty list on failure.
   static Future<List<AstrologyStory>> getStories() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/stories'))
-          .timeout(_timeout);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final stories = data['stories'] as List;
-        return stories
-            .map(
-              (s) => AstrologyStory(
-                title: s['title'],
-                summary: s['summary'],
-                category: s['category'],
-                readTime: s['readTime'],
-                content: s['content'] ?? '',
-              ),
-            )
-            .toList();
-      }
-    } catch (_) {}
-    return [];
+    final url = '$_baseUrl/stories';
+    final result = await _dedup<List<AstrologyStory>>(url, () async {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(_timeout);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final stories = data['stories'] as List;
+          final parsed = stories
+              .map(
+                (s) => AstrologyStory(
+                  title: s['title'],
+                  summary: s['summary'],
+                  category: s['category'],
+                  readTime: s['readTime'],
+                  content: s['content'] ?? '',
+                ),
+              )
+              .toList();
+          return parsed.isEmpty ? null : parsed;
+        }
+      } catch (_) {}
+      return null;
+    });
+    return result ?? [];
   }
 
   /// Fetch a full birth chart calculated with Swiss Ephemeris.
@@ -295,17 +353,20 @@ class ApiService {
 
   /// Fetch current planetary transits.
   static Future<List<TransitData>> getTransits() async {
-    try {
-      final response = await http
-          .get(Uri.parse('$_baseUrl/chart/transits'))
-          .timeout(_timeout);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final transits = data['transits'] as List;
-        return transits.map((t) => TransitData.fromJson(t)).toList();
-      }
-    } catch (_) {}
-    return [];
+    final url = '$_baseUrl/chart/transits';
+    final result = await _dedup<List<TransitData>>(url, () async {
+      try {
+        final response = await http.get(Uri.parse(url)).timeout(_timeout);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final transits = data['transits'] as List;
+          final parsed = transits.map((t) => TransitData.fromJson(t)).toList();
+          return parsed.isEmpty ? null : parsed;
+        }
+      } catch (_) {}
+      return null;
+    });
+    return result ?? [];
   }
 
   /// Fetch Vedic hub summary data. Returns null on failure.
@@ -313,28 +374,30 @@ class ApiService {
     String? birthDate,
     String? birthTime,
     String? birthPlace,
-  }) async {
-    try {
-      final query = <String, String>{};
-      if (birthDate != null && birthDate.isNotEmpty) {
-        query['birthDate'] = birthDate;
-      }
-      if (birthTime != null && birthTime.isNotEmpty) {
-        query['birthTime'] = birthTime;
-      }
-      if (birthPlace != null && birthPlace.isNotEmpty) {
-        query['birthPlace'] = birthPlace;
-      }
+  }) {
+    final query = <String, String>{};
+    if (birthDate != null && birthDate.isNotEmpty) {
+      query['birthDate'] = birthDate;
+    }
+    if (birthTime != null && birthTime.isNotEmpty) {
+      query['birthTime'] = birthTime;
+    }
+    if (birthPlace != null && birthPlace.isNotEmpty) {
+      query['birthPlace'] = birthPlace;
+    }
 
-      final uri = Uri.parse(
-        '$_baseUrl/vedic/home-summary',
-      ).replace(queryParameters: query.isEmpty ? null : query);
-      final response = await http.get(uri).timeout(_timeout);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
-        return VedicHomeSummaryData.fromJson(data);
-      }
-    } catch (_) {}
-    return null;
+    final uri = Uri.parse(
+      '$_baseUrl/vedic/home-summary',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    return _dedup<VedicHomeSummaryData>(uri.toString(), () async {
+      try {
+        final response = await http.get(uri).timeout(_timeout);
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          return VedicHomeSummaryData.fromJson(data);
+        }
+      } catch (_) {}
+      return null;
+    });
   }
 }

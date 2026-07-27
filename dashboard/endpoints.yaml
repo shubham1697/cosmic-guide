@@ -1,0 +1,21 @@
+# Endpoint catalog for the dashboard's "Endpoints" tab.
+# backed_by: db | mock | hybrid | ai | compute
+#   db      — served from Postgres
+#   ai      — generated live by an LLM
+#   hybrid  — DB/AI with a mock fallback
+#   compute — pure Python calculation (no DB/LLM)
+#   mock    — static/mock data only
+endpoints:
+  - { path: /health, method: GET, backed_by: compute, feature: Infra }
+  - { path: /api/v1/horoscope/today, method: GET, backed_by: hybrid, feature: Daily Horoscope }
+  - { path: /api/v1/horoscope/weekly, method: GET, backed_by: hybrid, feature: Daily Horoscope }
+  - { path: /api/v1/horoscope/monthly, method: GET, backed_by: hybrid, feature: Daily Horoscope }
+  - { path: /api/v1/tarot/draw, method: GET, backed_by: db, feature: Tarot Reading }
+  - { path: /api/v1/fortune/generate, method: POST, backed_by: hybrid, feature: Fortune Generator }
+  - { path: /api/v1/compatibility/check, method: POST, backed_by: db, feature: Compatibility Checker }
+  - { path: /api/v1/kundli/match, method: POST, backed_by: hybrid, feature: Kundli Matching }
+  - { path: /api/v1/stories, method: GET, backed_by: db, feature: Astrology Stories }
+  - { path: /api/v1/chart/birth, method: POST, backed_by: compute, feature: Natal Chart }
+  - { path: /api/v1/chart/vedic, method: POST, backed_by: compute, feature: Natal Chart }
+  - { path: /api/v1/chart/transits, method: GET, backed_by: compute, feature: Natal Chart }
+  - { path: /api/v1/vedic/home-summary, method: GET, backed_by: ai, feature: Vedic Home }

@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
+import 'astro_glossary_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userSign;
@@ -28,6 +29,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _birthDate = '';
   String _birthTime = '';
   String _birthPlace = '';
+  String _tradition = 'both';
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _birthDate = prefs.getString('birthDate') ?? '';
         _birthTime = prefs.getString('birthTime') ?? '';
         _birthPlace = prefs.getString('birthPlace') ?? '';
+        _tradition = prefs.getString('tradition') ?? 'both';
       });
     }
   }
@@ -76,25 +79,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
         initialBirthDate: _birthDate,
         initialBirthTime: _birthTime,
         initialBirthPlace: _birthPlace,
+        initialTradition: _tradition,
         calculateZodiac: _calculateZodiac,
-        onSave: (name, sign, birthDate, birthTime, birthPlace) async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('userName', name);
-          await prefs.setString('userSign', sign);
-          await prefs.setString('birthDate', birthDate);
-          await prefs.setString('birthTime', birthTime);
-          await prefs.setString('birthPlace', birthPlace);
-          if (mounted) {
-            setState(() {
-              _name = name;
-              _sign = sign;
-              _birthDate = birthDate;
-              _birthTime = birthTime;
-              _birthPlace = birthPlace;
-            });
-            widget.onProfileUpdated?.call(name, sign);
-          }
-        },
+        onSave:
+            (name, sign, birthDate, birthTime, birthPlace, tradition) async {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('userName', name);
+              await prefs.setString('userSign', sign);
+              await prefs.setString('birthDate', birthDate);
+              await prefs.setString('birthTime', birthTime);
+              await prefs.setString('birthPlace', birthPlace);
+              await prefs.setString('tradition', tradition);
+              if (mounted) {
+                setState(() {
+                  _name = name;
+                  _sign = sign;
+                  _birthDate = birthDate;
+                  _birthTime = birthTime;
+                  _birthPlace = birthPlace;
+                  _tradition = tradition;
+                });
+                widget.onProfileUpdated?.call(name, sign);
+              }
+            },
       ),
     );
   }
@@ -147,6 +154,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   textStyle: const TextStyle(fontSize: 13),
                 ),
               ),
+              const SizedBox(height: 16),
+              _buildTraditionBadge(),
               const SizedBox(height: 28),
               _buildBirthDetails(),
               const SizedBox(height: 28),
@@ -184,6 +193,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       child: Center(
         child: Text(sign.symbol, style: const TextStyle(fontSize: 44)),
+      ),
+    );
+  }
+
+  Widget _buildTraditionBadge() {
+    final (IconData icon, Color color, String label) = switch (_tradition) {
+      'western' => (Icons.wb_sunny_outlined, AppColors.accent, 'Western'),
+      'vedic' => (Icons.spa_outlined, AppColors.mysticTeal, 'Vedic'),
+      _ => (Icons.all_inclusive, AppColors.purple, 'Both'),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withAlpha(90)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Text(
+            'Reading style: $label',
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -482,6 +522,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems(BuildContext context) {
     final items = [
       _MenuItem(
+        Icons.menu_book_outlined,
+        'Astrology Guide',
+        AppColors.mysticTeal,
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const AstroGlossaryScreen())),
+      ),
+      _MenuItem(
         Icons.notifications_outlined,
         'Notifications',
         AppColors.accent,
@@ -500,6 +548,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           child: ListTile(
+            onTap: item.onTap,
             leading: Icon(item.icon, color: item.color),
             title: Text(
               item.label,
@@ -599,7 +648,8 @@ class _MenuItem {
   final IconData icon;
   final String label;
   final Color color;
-  const _MenuItem(this.icon, this.label, this.color);
+  final VoidCallback? onTap;
+  const _MenuItem(this.icon, this.label, this.color, {this.onTap});
 }
 
 // ─── Edit Profile Bottom Sheet ────────────────────────────────────────────────
@@ -610,6 +660,7 @@ class _EditProfileSheet extends StatefulWidget {
   final String initialBirthDate;
   final String initialBirthTime;
   final String initialBirthPlace;
+  final String initialTradition;
   final String Function(DateTime) calculateZodiac;
   final void Function(
     String name,
@@ -617,6 +668,7 @@ class _EditProfileSheet extends StatefulWidget {
     String birthDate,
     String birthTime,
     String birthPlace,
+    String tradition,
   )
   onSave;
 
@@ -626,6 +678,7 @@ class _EditProfileSheet extends StatefulWidget {
     required this.initialBirthDate,
     required this.initialBirthTime,
     required this.initialBirthPlace,
+    required this.initialTradition,
     required this.calculateZodiac,
     required this.onSave,
   });
@@ -642,6 +695,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   bool _showPlaceError = false;
   DateTime? _birthDate;
   TimeOfDay? _birthTime;
+  late String _tradition;
 
   @override
   void initState() {
@@ -652,6 +706,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
         : null;
     _placeRawText = widget.initialBirthPlace;
     _selectedSign = widget.initialSign;
+    _tradition = widget.initialTradition;
 
     if (widget.initialBirthDate.isNotEmpty) {
       try {
@@ -746,6 +801,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       birthDate,
       birthTime,
       _selectedPlace ?? '',
+      _tradition,
     );
     Navigator.pop(context);
   }
@@ -862,6 +918,18 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               },
             ),
             const SizedBox(height: 20),
+            _label('Reading Style'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _traditionChip('western', 'Western'),
+                _traditionChip('vedic', 'Vedic'),
+                _traditionChip('both', 'Both'),
+              ],
+            ),
+            const SizedBox(height: 20),
             if (_birthDate == null) ...[
               _label('Zodiac Sign'),
               const SizedBox(height: 8),
@@ -917,6 +985,34 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       fontWeight: FontWeight.w600,
     ),
   );
+
+  Widget _traditionChip(String value, String label) {
+    final isSelected = _tradition == value;
+    return GestureDetector(
+      onTap: () => setState(() => _tradition = value),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: isSelected ? AppColors.gradientPurple : null,
+          color: isSelected ? null : AppColors.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? Colors.transparent
+                : AppColors.textMuted.withAlpha(51),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _tapField({
     required IconData icon,

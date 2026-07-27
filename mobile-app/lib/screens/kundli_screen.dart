@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
+import '../widgets/score_ring.dart';
 
 class KundliScreen extends StatefulWidget {
   final bool embedded;
@@ -375,17 +376,17 @@ class _KundliScreenState extends State<KundliScreen> {
           ),
           child: Column(
             children: [
-              Text(
-                '${_result.totalScore}/${_result.maxScore}',
-                style: GoogleFonts.playfairDisplay(
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: _result.totalScore >= 24
-                      ? AppColors.health
-                      : AppColors.accent,
-                ),
+              ScoreRing(
+                value: _result.maxScore > 0
+                    ? _result.totalScore / _result.maxScore
+                    : 0.0,
+                label: '${_result.totalScore}/${_result.maxScore}',
+                color: _result.totalScore >= 24
+                    ? AppColors.health
+                    : AppColors.accent,
+                size: 160,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text(
                 _result.compatibility,
                 style: TextStyle(
@@ -395,6 +396,11 @@ class _KundliScreenState extends State<KundliScreen> {
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
                 ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Guna Milan Score',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               const SizedBox(height: 20),
               ...(_result.kootaScores as Map<String, int>).entries.map((entry) {

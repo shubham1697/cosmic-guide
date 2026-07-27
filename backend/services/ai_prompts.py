@@ -24,7 +24,21 @@ Rules you must always follow:
 - When asked for JSON, return ONLY valid JSON — no markdown fences, no commentary.
 - Be specific to each zodiac sign's core traits and ruling planet.
 """
-
+# Vedic rashi metadata for prompt shaping: English sign -> (Sanskrit rashi, rashi lord/swami)
+RASHI_INFO = {
+    "Aries": ("Mesha", "Mars (Mangala)"),
+    "Taurus": ("Vrishabha", "Venus (Shukra)"),
+    "Gemini": ("Mithuna", "Mercury (Budha)"),
+    "Cancer": ("Karka", "Moon (Chandra)"),
+    "Leo": ("Simha", "Sun (Surya)"),
+    "Virgo": ("Kanya", "Mercury (Budha)"),
+    "Libra": ("Tula", "Venus (Shukra)"),
+    "Scorpio": ("Vrishchika", "Mars (Mangala)"),
+    "Sagittarius": ("Dhanu", "Jupiter (Guru)"),
+    "Capricorn": ("Makara", "Saturn (Shani)"),
+    "Aquarius": ("Kumbha", "Saturn (Shani)"),
+    "Pisces": ("Meena", "Jupiter (Guru)"),
+}
 # ────────────────────────────────────────────────────────────────────────────
 #  HOROSCOPE PROMPT
 # ────────────────────────────────────────────────────────────────────────────
@@ -67,8 +81,99 @@ Make today's entry distinct — reference the day of the week and seasonal energ
 Vary the overall_score naturally; not every day is 90+."""
 
 
+# ────────────────────────────────────────────────────────────────────────────#  VEDIC HOROSCOPE PROMPT  (sidereal, keyed on Moon rashi / Janma Rashi)
+# ───────────────────────────────────────────────────────────
+
+def vedic_horoscope_prompt(moon_rashi: str, for_date: date) -> str:
+    """
+    Daily reading framed in Vedic (Jyotish) terms, keyed on the user's Moon
+    sign (Janma Rashi). Returns the SAME JSON shape as horoscope_prompt so the
+    rest of the pipeline (parsing, schema, mobile app) is unchanged.
+    """
+    day_name = for_date.strftime("%A")
+    month_name = for_date.strftime("%B")
+    day_num = for_date.day
+    year = for_date.year
+    sanskrit, lord = RASHI_INFO.get(moon_rashi, (moon_rashi, "its ruling graha"))
+
+    return f"""You are a Vedic astrologer (Jyotishi). Write today's reading for a person whose Moon sign (Janma Rashi) is {moon_rashi} — {sanskrit} — for {day_name}, {month_name} {day_num}, {year}.
+
+This is a SIDEREAL / Vedic reading. Base it on the Moon rashi {sanskrit}, whose rashi lord (swami) is {lord}. Draw on Vedic ideas — the Moon (Chandra) as the mind, the rashi lord {lord}, the grahas, and the emotional significations of the Janma Rashi. Do NOT use tropical Sun-sign framing.
+
+Return ONLY a valid JSON object with these exact keys:
+- "general"       — overall theme for this rashi today (60-80 words)
+- "love"          — relationships and emotional life (60-80 words)
+- "career"        — work, duty (dharma) and finances (60-80 words)
+- "health"        — body and mind wellbeing (60-80 words)
+- "overall_score" — integer between 60 and 95 reflecting today's graha energy
+- "lucky_number"  — a single lucky number as a string
+- "lucky_color"   — one auspicious color for {sanskrit} today
+- "mood"          — one descriptive word capturing today's emotional tone
+
+Reference the rashi lord {lord} and the Moon's influence naturally. Keep it warm and authentic to Jyotish, never doom-laden. Vary the overall_score; not every day is 90+."""
+
+
 # ────────────────────────────────────────────────────────────────────────────
-#  BATCH HOROSCOPE PROMPT  (all 12 signs in one call — cost-efficient)
+#  PERIODIC HOROSCOPE PROMPTS  (weekly / monthly — same JSON shape as daily)
+# ────────────────────────────────────────────────────────────────────────────
+
+def period_horoscope_prompt(zodiac_sign: str, period: str,
+                            start: date, end: date) -> str:
+    """Weekly or monthly Sun-sign horoscope. Same JSON shape as the daily prompt."""
+    if period == "monthly":
+        cadence = "month"
+        span = start.strftime("%B %Y")
+        arc = "Cover the month's overall arc and how the energy shifts from the first week to the last."
+    else:
+        cadence = "week"
+        span = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+        arc = "Cover the week's arc from start to finish and note a couple of standout days."
+
+    return f"""Generate a complete {cadence}ly horoscope for {zodiac_sign} for the {cadence} of {span}.
+
+Return ONLY a valid JSON object with these exact keys:
+- "general"       — overall {cadence} theme (70-100 words). {arc}
+- "love"          — romantic/relationship outlook for the {cadence} (70-100 words)
+- "career"        — professional and financial guidance for the {cadence} (70-100 words)
+- "health"        — physical and mental wellness for the {cadence} (70-100 words)
+- "overall_score" — integer between 60 and 95 reflecting the {cadence}'s cosmic energy
+- "lucky_number"  — a single lucky number for the {cadence} as a string
+- "lucky_color"   — one color that resonates with {zodiac_sign} this {cadence}
+- "mood"          — one descriptive word capturing the {cadence}'s emotional tone
+
+Ground each section in {zodiac_sign}'s ruling planet, element, and core personality.
+Speak to the {cadence} as a whole, not a single day. Vary the overall_score naturally."""
+
+
+def vedic_period_horoscope_prompt(moon_rashi: str, period: str,
+                                  start: date, end: date) -> str:
+    """Weekly or monthly Vedic (sidereal) reading keyed on the Moon rashi."""
+    sanskrit, lord = RASHI_INFO.get(moon_rashi, (moon_rashi, "its ruling graha"))
+    if period == "monthly":
+        cadence = "month"
+        span = start.strftime("%B %Y")
+    else:
+        cadence = "week"
+        span = f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+
+    return f"""You are a Vedic astrologer (Jyotishi). Write the {cadence}ly reading for a person whose Moon sign (Janma Rashi) is {moon_rashi} — {sanskrit} — for the {cadence} of {span}.
+
+This is a SIDEREAL / Vedic reading based on the Moon rashi {sanskrit}, whose rashi lord (swami) is {lord}. Draw on the grahas, the Moon (Chandra) as the mind, and the rashi lord {lord}. Do NOT use tropical Sun-sign framing.
+
+Return ONLY a valid JSON object with these exact keys:
+- "general"       — overall theme for this rashi this {cadence} (70-100 words)
+- "love"          — relationships and emotional life (70-100 words)
+- "career"        — work, dharma and finances (70-100 words)
+- "health"        — body and mind wellbeing (70-100 words)
+- "overall_score" — integer between 60 and 95 reflecting the {cadence}'s graha energy
+- "lucky_number"  — a single lucky number as a string
+- "lucky_color"   — one auspicious color for {sanskrit} this {cadence}
+- "mood"          — one descriptive word capturing the {cadence}'s emotional tone
+
+Reference the rashi lord {lord} and the Moon's influence naturally. Keep it warm and authentic to Jyotish. Speak to the {cadence} as a whole. Vary the overall_score."""
+
+
+# ───────────────────────────────────────────────────────────#  BATCH HOROSCOPE PROMPT  (all 12 signs in one call — cost-efficient)
 # ────────────────────────────────────────────────────────────────────────────
 
 def batch_horoscope_prompt(for_date: date) -> str:

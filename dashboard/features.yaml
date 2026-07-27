@@ -1,0 +1,788 @@
+meta:
+  app: CosmicGuide
+  source: TODO.md
+sections:
+- name: 🐛 Bugs / Investigations
+  items:
+  - title: 'Today''s Horoscope opened the Kundli screen in Vedic mode — FIXED (Jul 24). The daily card
+      was wired to onChartTap, which falls back to the Vedic/Kundli tab when there is no Chart tab (Vedic
+      navigation). It now pushes the detailed HoroscopeScreen directly, threaded with the resolved system
+      (western/vedic), so it behaves the same in every tradition. This also repurposes the previously
+      orphaned lib/screens/horoscope_screen.dart. Files: lib/screens/home_screen.dart, lib/screens/horoscope_screen.dart,
+      lib/main.dart.'
+    status: done
+  - title: 'Tarot cards not loading — Likely resolved: backend/logs/audit.log shows /api/v1/tarot/draw
+      returning 200 consistently, and the home screen caches a daily draw. Re-verify once on-device, then
+      close. Data comes from the backend (with a local-deck fallback).'
+    status: partial
+- name: R1. Tradition preference — capture ✅ DONE
+  items:
+  - title: Onboarding tradition step — added page 4/5 ("How do you read the stars?" → Western / Vedic
+      / Both / Not sure); saves tradition via SharedPreferences in _completeOnboarding (default both)
+    status: done
+  - title: Profile tradition toggle — editable selector (chips) in _EditProfileSheet + "Reading style"
+      badge on profile
+    status: done
+  - title: Sign-difference education — info box on tradition step explaining the ~24° sidereal shift ("your
+      Vedic Sun is often the previous sign")
+    status: done
+- name: R2. Tradition-aware daily reading — KEYSTONE — ✅ DONE (backend)
+  items:
+  - title: Sidereal reading path — /today now takes ?system=western|vedic (default western). Vedic uses
+      new vedic_horoscope_prompt(moon_rashi, date) (Jyotishi framing on the Janma/Moon rashi, Sanskrit
+      name + rashi lord via RASHI_INFO), same JSON shape → schema & mobile unchanged
+    status: done
+  - title: Cache key update — in-memory cache key is now (sign, system, date)
+    status: done
+  - title: System threaded end-to-end — today_horoscope → get_horoscope(sign, system, db) → generate_daily_horoscope(sign,
+      date, system). Western stays fully DB-backed; Vedic uses memory + AI + template only (no DB persistence)
+      to avoid a horoscopes schema migration (no system column; create_all won't alter existing tables)
+    status: done
+  - title: _Deferred:_ nakshatra-level detail + Vedic DB persistence (needs system column + migration)
+    status: pending
+  - title: _R3 scope:_ resolve WHICH rashi is the user's Moon sign (client-side, via existing sidereal
+      /chart/vedic) and pass it as zodiac_sign with system=vedic — done in R3
+    status: done
+- name: R3. Sign-identity resolver — consistency — ✅ DONE
+  items:
+  - title: Resolver — new SignResolver.resolve(tradition, sunSign, birth…) → ReadingIdentity(readingSign,
+      system). Western/Both → tropical Sun + system=western; Vedic → sidereal Moon rashi (Janma Rashi)
+      + system=vedic. Moon sign is fetched once via /chart/vedic and cached in SharedPreferences (vedicMoonSign,
+      keyed on birth inputs so it auto-invalidates)
+    status: done
+  - title: Wired end-to-end — getHoroscope(sign, {system}) now appends &system=; MainShell resolves identity
+      before fetching (loads birth data first) and passes readingSign/system to Home; Home fetches + displays
+      the resolved sign, with a "Moon sign · Janma Rashi" subtitle in Vedic mode
+    status: done
+  - title: Gate Vedic on birth time + place — Vedic chosen but time/place missing → falls back to Western
+      and Home shows a tap-to-fix nudge ("Add your birth time & place…") that opens Profile. Transient
+      chart-fetch failures fall back silently (no nag)
+    status: done
+  - title: _Deferred (R5):_ sidereal-Sun identity display, nakshatra-level reading, and making the standalone
+      horoscope_screen.dart / chart_screen.dart (Western surfaces) tradition-aware
+    status: pending
+- name: R4. Adaptive navigation & framing — ✅ nav done (deep terms → R5)
+  items:
+  - title: Conditional tabs — tab set built in _MainShellState from tradition (both→all 5; western→Home/Chart/Match/Profile;
+      vedic→Home/Kundli/Match/Profile); selected tab is preserved when the set changes
+    status: done
+  - title: Per-tradition labels — nav-level done (Vedic tab reads "Kundli" for Vedic users); in-screen
+      Rising↔Lagna / Birth Chart↔Kundli deferred to R5 Jyotish terminology
+    status: partial
+- name: R5. Authenticity polish — 🚧 in progress
+  items:
+  - title: Jyotish terminology in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — _kundli chart already
+      uses Lagna/Nakshatra; audit + fold in R4-deferred Rising↔Lagna / Birth Chart↔Kundli relabels_
+    status: pending
+  - title: Glossary / "why signs differ" explainer screen — new AstroGlossaryScreen (tropical vs. sidereal
+      + ~24° Lahiri ayanamsa, plus Jyotish & Western term cards). Reachable via Profile → Astrology Guide.
+      flutter analyze clean
+    status: done
+  - title: 'Vedic wheel defaults to North/South — already satisfied: kundli_chart_screen.dart defaults
+      to _KundliChartStyle.north and uses Lagna/Nakshatra terminology (verified in R5)'
+    status: done
+  - title: '"Both" compare view — reuse the Match screen''s Western/Vedic tab pattern (Western Sun reading
+      vs. Vedic Moon-rashi reading side by side)'
+    status: pending
+- name: 1. Onboarding & User Setup
+  items:
+  - title: Welcome screen — app intro with "Begin Your Journey" CTA
+    status: done
+  - title: Name input step — text field with validation, "The stars wish to know you" subtitle
+    status: done
+  - title: Birth date picker — native date picker, dark themed, range 1940-present
+    status: done
+  - title: Automatic zodiac calculation — Western zodiac from month/day ranges (all 12 signs)
+    status: done
+  - title: Zodiac reveal — animated sign symbol + name display after date selection
+    status: done
+  - title: Page indicators — 3-dot animated indicators with width transition (8px → 24px)
+    status: done
+  - title: Data persistence — saves userName, userSign, onboarded flag via SharedPreferences
+    status: done
+  - title: Birth time input — optional step (skippable), saved to SharedPreferences
+    status: done
+  - title: Birth place input — optional step (skippable), saved to SharedPreferences
+    status: done
+  - title: Manual zodiac override — let user pick sign if they disagree with calculation
+    status: pending
+- name: 2. Authentication (Not Started)
+  items:
+  - title: Email + password sign-up/login
+    status: pending
+  - title: Google OAuth sign-in
+    status: pending
+  - title: Apple Sign-In (iOS requirement)
+    status: pending
+  - title: OTP / email verification flow
+    status: pending
+  - title: Forgot password / reset flow
+    status: pending
+  - title: JWT token storage (secure storage, not SharedPreferences)
+    status: pending
+  - title: Session management — auto-refresh tokens, logout
+    status: pending
+  - title: Guest mode — use app without account, prompt to sign up for saves
+    status: pending
+- name: 3. Home Screen
+  items:
+  - title: Time-based greeting — "Good Morning/Afternoon/Evening" based on device clock
+    status: done
+  - title: User zodiac display — sign name + Unicode symbol (e.g., "Scorpio ♏")
+    status: done
+  - title: Zodiac avatar — circular container with purple gradient background
+    status: done
+  - title: Today's horoscope card — tappable, shows general prediction (3-line truncated)
+    status: done
+  - title: Overall daily score — gold gradient badge showing percentage (e.g., "85%")
+    status: done
+  - title: Lucky info chips — Lucky Number, Lucky Color, Mood (with icons)
+    status: done
+  - title: 'Quick action grid — 4 buttons: Tarot (purple), Fortune (gold), Match (pink), Kundli (teal)'
+    status: done
+  - title: Cosmic stories feed — 3 story preview cards with title, summary, category, read time
+    status: done
+  - title: Pull-to-refresh — re-fetches horoscope + stories from backend
+    status: done
+  - title: Today's tarot card widget — mini daily card preview
+    status: done
+  - title: Greeting by name — shows "Good Morning, {name}" using saved userName from onboarding
+    status: done
+  - title: Notification bell icon — show unread notification count
+    status: pending
+- name: 4. Daily Horoscope
+  items:
+  - title: Sign header — zodiac symbol (large) + sign name (Playfair Display) + date range
+    status: done
+  - title: Score ring — circular container with 2px gold border, score% + "Overall" label
+    status: done
+  - title: 'Tabbed categories — 4 tabs: General (star icon), Love (heart), Career (work), Health (safety)'
+    status: done
+  - title: Tab bar — custom container with purple gradient indicator, 13px text
+    status: done
+  - title: Tab content — each tab has icon + scrollable text in a card
+    status: done
+  - title: 'Lucky section — bottom card with 3 items: Lucky Number, Lucky Color, Mood'
+    status: done
+  - title: Horoscope content — unique mock data for all 12 signs with custom text, scores, lucky numbers,
+      colors, and moods
+    status: done
+  - title: Swipe gesture — navigate to previous/next day horoscope
+    status: pending
+  - title: Date selector — pick any date to view past/future predictions
+    status: pending
+  - title: Share horoscope — share as text or styled image to social media
+    status: pending
+  - title: Weekly/monthly view — extended prediction timeframes
+    status: pending
+  - title: Real AI-generated content — replace mock data with OpenAI/Gemini responses
+    status: pending
+  - title: Backend integration — GET /horoscope/today?zodiac_sign={sign}, falls back to mock data
+    status: done
+- name: 5. Tarot Reading
+  items:
+  - title: Screen layout — title "Draw Your Card" + subtitle "Tap the card to reveal your destiny"
+    status: done
+  - title: Card back design — 220x340px, purple gradient, gold 2px border, star icon, "Tap to Reveal"
+    status: done
+  - title: Draw button — "Draw a Card" / "Draw Again" toggle, style icon
+    status: done
+  - title: Random card selection — picks from full 78-card deck via backend API (fallback to local deck)
+    status: done
+  - title: 3D card flip animation
+    status: done
+  - title: Card face display — number (Playfair, 32px, gold), star icon (56px), name (22px), meaning (12px
+      italic)
+    status: done
+  - title: Glow effect — purple shadow on back, gold shadow on face (blurRadius 20, spreadRadius 2)
+    status: done
+  - title: Interpretation panel — appears after reveal, purple bordered card with italic text
+    status: done
+  - title: 'Full 78-card tarot deck with custom interpretations:'
+    status: done
+  - title: Card interpretations — pre-generated data for all 78 cards (see Hybrid Model below)
+    status: done
+  - title: Reversed card option — 30% chance reversed, 180° rotation, red glow/border, "Reversed" badge,
+      unique reversed interpretations for all 78 cards
+    status: done
+  - title: Daily card of the day — auto-draw one card per day, cache result
+    status: done
+  - title: Card spread layouts — 3-card spread built (lib/screens/tarot_spread_screen.dart); Celtic Cross
+      still pending
+    status: partial
+  - title: Card history / journal — save drawn cards with date, let user add notes
+    status: pending
+  - title: Card animation sound effects — swipe/flip audio feedback
+    status: pending
+  - title: Backend integration — GET /tarot/draw, falls back to local mock deck
+    status: done
+- name: Hybrid Tarot Model (Planned Approach)
+  items:
+  - title: 'When user taps "Draw Card", instantly show:'
+    status: done
+  - title: Pre-generated interpretations for all 78 cards (upright + reversed in backend)
+    status: done
+  - title: Ensure instant, offline-capable card reveals with no loading delay
+    status: pending
+  - title: Add "Get Personalized Insight" button after card reveal
+    status: pending
+  - title: Add "Interpret for My Situation" option for contextual readings
+    status: pending
+  - title: 'On tap, send to AI service:'
+    status: pending
+  - title: Display AI-generated deeper, customized reading below the pre-generated one
+    status: pending
+  - title: Cache AI responses to reduce API calls for repeated draws
+    status: pending
+  - title: Graceful fallback — if AI is unavailable, pre-generated interpretation remains visible
+    status: pending
+- name: 6. Fortune Generator
+  items:
+  - title: Crystal ball animation — 140px circle with pulsating RadialGradient
+    status: done
+  - title: 'Topic selector — 5 options: Love, Career, Health, Wealth, Spiritual'
+    status: done
+  - title: 'Mood selector — 5 options: Happy, Curious, Anxious, Hopeful, Reflective'
+    status: done
+  - title: Generate button — disabled until both topic + mood selected
+    status: done
+  - title: Fortune card — gradient card with gold border, star icon, italic Playfair Display text
+    status: done
+  - title: Fortune content — backend generates fortunes from topic-based templates, falls back to local
+      pool
+    status: done
+  - title: AI-powered fortunes — send zodiac + topic + mood to OpenAI/Gemini for unique response
+    status: pending
+  - title: Fortune history — save generated fortunes with timestamp
+    status: pending
+  - title: Save/bookmark — mark favorite fortunes
+    status: pending
+  - title: Share as image — generate styled image card for sharing
+    status: pending
+  - title: Daily fortune limit — free users get 3/day, premium unlimited
+    status: pending
+  - title: Backend integration — POST /fortune/generate { zodiacSign, topic, mood }, falls back to mock
+      fortunes
+    status: done
+- name: 7. Compatibility Checker
+  items:
+  - title: Screen header — "Zodiac Match" title (Playfair 28px) + subtitle
+    status: done
+  - title: Dual sign picker — two side-by-side containers with labels ("Your Sign" / "Their Sign")
+    status: done
+  - title: Heart icon — pink favorite icon (32px) between the two pickers
+    status: done
+  - title: Check button — disabled until both signs selected, pink heart icon
+    status: done
+  - title: 'Score display — Playfair Display 48px, color-coded:'
+    status: done
+  - title: Zodiac symbol pair — shows both symbols with heart between them
+    status: done
+  - title: Description text — element-based compatibility explanation
+    status: done
+  - title: Love Advice card — pink icon + personalized advice
+    status: done
+  - title: Strengths Together card — gold flash icon + strengths description
+    status: done
+  - title: Challenges card — amber warning icon + challenges description
+    status: done
+  - title: 'Compatibility scoring — element-based lookup table (16 combinations):'
+    status: partial
+  - title: Reverse compatibility — show if result differs when signs are swapped
+    status: pending
+  - title: Compatibility history — save previous checks
+    status: pending
+  - title: Detailed breakdown — love, friendship, work compatibility sub-scores
+    status: pending
+  - title: Celebrity matches — show famous couples with same sign pairing
+    status: pending
+  - title: Backend integration — POST /compatibility/check { sign1, sign2 }, falls back to mock data
+    status: done
+- name: 8. Kundli Matching (Gun Milan)
+  items:
+  - title: Screen header — "Gun Milan" (Playfair 28px gold) + "Ashta Koota compatibility analysis"
+    status: done
+  - title: 'Person 1 form — teal-bordered card with:'
+    status: done
+  - title: Person 2 form — identical layout to Person 1
+    status: done
+  - title: Form validation — all 6 fields required (names + dates + places, times optional in validation)
+    status: done
+  - title: Calculate button — disabled until valid, "Calculate Kundli" / "Calculating..." states (2-second
+      delay)
+    status: done
+  - title: Total score — Playfair 48px, "26/36" format
+    status: done
+  - title: Compatibility label — "Good" text below score, matching color
+    status: done
+  - title: 'Ashta Koota breakdown — 8 rows, each with:'
+    status: done
+  - title: Manglik Dosha warning — red-bordered card with warning icon (conditional, currently false)
+    status: done
+  - title: Analysis section — teal-accented card with AI-style analysis text
+    status: done
+  - title: Mock data — returns fixed result every time (26/36, "Good", no dosha)
+    status: partial
+  - title: Real Ashta Koota algorithm — calculate Nakshatra from birth details, compute actual scores
+    status: pending
+  - title: Manglik Dosha calculation — check Mars position in 1st/2nd/4th/7th/8th/12th house
+    status: pending
+  - title: Dosha remedies — suggest remedies based on detected doshas
+    status: pending
+  - title: Download PDF report — generate styled PDF with full analysis
+    status: pending
+  - title: Share report — send via WhatsApp/email
+    status: pending
+  - title: Save reports — store in user history
+    status: pending
+  - title: Detailed Nakshatra display — show both persons' nakshatras
+    status: pending
+  - title: Backend integration — POST /kundli/match { person1, person2 }, falls back to mock data
+    status: done
+- name: 9. Personality Insights
+  items:
+  - title: Section header — "Personality Traits" (Playfair 18px purple) with psychology icon
+    status: done
+  - title: Strengths row — green color bar (4px wide, 40px tall) + label + text
+    status: done
+  - title: Weaknesses row — pink/love color bar + label + text
+    status: done
+  - title: Emotional patterns row — teal color bar + label + text
+    status: done
+  - title: Purple-bordered gradient card container
+    status: done
+  - title: Trait data — unique traits for all 12 zodiac signs
+    status: done
+  - title: Complete all 12 signs — unique strengths, weaknesses, emotional patterns for all 12 zodiac
+      signs
+    status: done
+  - title: Standalone personality screen — separate from profile, with more detail
+    status: pending
+  - title: Detailed personality report — strengths, weaknesses, emotional patterns, love style, career
+      aptitude, communication style
+    status: pending
+  - title: AI-generated insights — dynamic personality readings based on full birth chart
+    status: pending
+  - title: Personality comparison — compare two signs side by side
+    status: pending
+  - title: Element & modality breakdown — show Fire/Earth/Air/Water + Cardinal/Fixed/Mutable traits
+    status: pending
+- name: 10. Astrology Stories
+  items:
+  - title: Story card layout — icon container (50px, purple gradient) + title (14px bold) + summary (12px,
+      1 line) + read time
+    status: done
+  - title: Home feed — shows top 3 stories in vertical list
+    status: done
+  - title: '5 sample stories with full metadata:'
+    status: done
+  - title: Story detail screen — full article view with content display
+    status: done
+  - title: 'Category filter bar — horizontal chips: All, Weekly, Planetary, Relationships, Rituals, Career'
+    status: pending
+  - title: Bookmark/save articles — heart icon on each card, save to user collection
+    status: pending
+  - title: Share stories — share article link or preview image
+    status: pending
+  - title: Like/react to stories — engagement metrics
+    status: pending
+  - title: Related stories — show similar articles at bottom of detail view
+    status: pending
+  - title: AI-generated stories — auto-generate weekly content via AI prompts
+    status: pending
+  - title: Push notification on new story — alert users of fresh content
+    status: pending
+  - title: Backend-driven feed — fetch stories from API with pagination
+    status: pending
+  - title: Dedicated stories tab — consider replacing a nav tab or adding as sub-navigation
+    status: pending
+- name: 11. Profile Screen
+  items:
+  - title: Zodiac avatar — 100px circle, purple gradient, gold 2px border, purple glow shadow, zodiac
+      symbol (44px)
+    status: done
+  - title: User name — Playfair Display 28px bold
+    status: done
+  - title: Sign info line — "Scorpio ♏ | Oct 23 - Nov 21" format (14px muted)
+    status: done
+  - title: 'Stats row — 3 stats with dividers:'
+    status: done
+  - title: Personality traits section — (see section 9 above)
+    status: done
+  - title: 'Sign details card — 3 rows with dividers:'
+    status: done
+  - title: 'Premium CTA — gold gradient card: "Upgrade to Premium" + "Unlock advanced reports & unlimited
+      readings" + arrow icon'
+    status: done
+  - title: 'Menu items — 4 list tiles in rounded cards:'
+    status: done
+  - title: Edit profile — change name, update birth details
+    status: pending
+  - title: Profile photo — upload or choose avatar
+    status: pending
+  - title: Change birth details — re-enter DOB, recalculate sign
+    status: pending
+  - title: Real stats tracking — count actual readings, calculate real streak from usage dates
+    status: pending
+  - title: Dark/light theme toggle — currently dark only
+    status: pending
+  - title: Language selection — multi-language support (Hindi, etc.)
+    status: pending
+  - title: Account deletion — GDPR compliance, delete all user data
+    status: pending
+  - title: Logout functionality
+    status: pending
+- name: 12. Navigation & App Shell
+  items:
+  - title: App entry point — CosmicGuideApp → AppEntry with loading state
+    status: done
+  - title: Onboarding check — reads SharedPreferences, shows onboarding or main shell
+    status: done
+  - title: 'Bottom navigation bar — 5 tabs with outlined/filled icon states:'
+    status: done
+  - title: IndexedStack — all 5 screens stay alive in memory during session
+    status: done
+  - title: Push navigation — Fortune & Kundli screens pushed via Navigator.push from home quick actions
+    status: done
+  - title: Nav bar styling — dark secondary background, gold selected color, muted unselected, shadow
+    status: done
+  - title: Deep linking — handle URLs to specific screens (for notifications, sharing)
+    status: pending
+  - title: Route animations — custom page transitions (fade, slide)
+    status: pending
+  - title: Back button handling — confirm exit on home screen
+    status: pending
+- name: Colors (all implemented)
+  items:
+  - title: 'Primary: #1A1A2E (dark navy) — scaffold background'
+    status: done
+  - title: 'Secondary: #16213E — nav bar background'
+    status: done
+  - title: 'Accent/Gold: #FFD700 — buttons, highlights, selected states'
+    status: done
+  - title: 'Surface: #0F3460 — progress bar backgrounds'
+    status: done
+  - title: 'Card: #1E2A4A — card backgrounds'
+    status: done
+  - title: 'Love: #E91E63 — compatibility, hearts'
+    status: done
+  - title: 'Career/Gold: #FFD700 — career category'
+    status: done
+  - title: 'Health/Teal: #00BFA5 — health category, good scores'
+    status: done
+  - title: 'General/Purple: #7C4DFF — general category, accents'
+    status: done
+  - title: 'Deep Purple: #4A148C — gradient endpoints'
+    status: done
+  - title: 'Mystic Teal: #00BCD4 — kundli accents'
+    status: done
+- name: Gradients (all implemented)
+  items:
+  - title: 'gradientPrimary — 3-stop: #1A1A2E → #16213E → #0F3460'
+    status: done
+  - title: 'gradientCard — 2-stop: #1E2A4A → #253559'
+    status: done
+  - title: 'gradientGold — 2-stop: #FFD700 → #FFA000'
+    status: done
+  - title: 'gradientPurple — 2-stop: #7C4DFF → #4A148C'
+    status: done
+- name: Typography (all implemented)
+  items:
+  - title: Headings — Playfair Display (serif, mystical feel) via google_fonts
+    status: done
+  - title: Body — Poppins (clean sans-serif) via google_fonts
+    status: done
+  - title: 'Font scale — display: 32/24px, title: 20/16px, body: 16/14/12px'
+    status: done
+- name: Starry Background Widget
+  items:
+  - title: CustomPainter with 50 animated stars
+    status: done
+  - title: 'Each star: random position, size (0.5-2.5px), opacity (0.2-0.7), speed (0.5-1.0)'
+    status: done
+  - title: 'AnimationController: 3-second cycle, repeats with reverse'
+    status: done
+  - title: 'Star color: gold (#FFD700) with varying alpha'
+    status: done
+- name: Pending UI Enhancements
+  items:
+  - title: Splash screen — app logo + loading animation on startup (lib/screens/splash_screen.dart)
+    status: done
+  - title: App icon — custom icon for Android & iOS
+    status: pending
+  - title: Lottie/Rive animations — replace simple loading spinners with rich animations
+    status: pending
+  - title: Shimmer loading — skeleton placeholders while data loads
+    status: pending
+  - title: Haptic feedback — vibration on card flip, button taps
+    status: pending
+  - title: Particle effects — constellation drawing, sparkle bursts
+    status: pending
+  - title: Light theme option — alternative color scheme
+    status: pending
+- name: 14. Backend API (Not Started)
+  items:
+  - title: POST /users/create — register new user (name, email, birth details)
+    status: pending
+  - title: GET /users/profile — retrieve user profile by auth token
+    status: pending
+  - title: PUT /users/update — update user details
+    status: pending
+  - title: POST /auth/login — email + password login, return JWT
+    status: pending
+  - title: POST /auth/google — Google OAuth flow
+    status: pending
+  - title: POST /auth/refresh — refresh expired JWT token
+    status: pending
+  - title: GET /horoscope/today?zodiac_sign=Aries — daily horoscope for sign
+    status: pending
+  - title: GET /horoscope/weekly?zodiac_sign=Aries — weekly horoscope
+    status: pending
+  - title: 'POST /fortune/generate — body: { zodiac_sign, topic, mood }'
+    status: pending
+  - title: GET /tarot/draw — random tarot card with interpretation
+    status: pending
+  - title: 'POST /compatibility/check — body: { sign1, sign2 }'
+    status: pending
+  - title: 'POST /kundli/match — body: { person1_birth_details, person2_birth_details }'
+    status: pending
+  - title: GET /stories — paginated story feed
+    status: pending
+  - title: GET /stories/:id — single story detail
+    status: pending
+  - title: GET /panchang/daily?date={date}&lat={lat}&lon={lon} — Tithi, Vara, Nakshatra, Yoga, Karana,
+      time slots
+    status: pending
+  - title: GET /panchang/monthly?month={m}&year={y}&lat={lat}&lon={lon} — full month Panchang
+    status: pending
+  - title: 'POST /dasha/calculate — body: { birth_date, birth_time, birth_place } → Vimshottari Dasha
+      timeline'
+    status: pending
+  - title: POST /chart/vedic — sidereal birth chart with house-wise planet placements
+    status: pending
+  - title: POST /dosha/detect — detect Mangal, Kaal Sarp, Nadi, Sade Sati, Pitru doshas
+    status: pending
+  - title: 'POST /muhurta/find — body: { category, date_from, date_to, lat, lon } → ranked muhurta list'
+    status: pending
+  - title: GET /calendar/hindu?month={m}&year={y} — Hindu month, festivals, Ekadashi, Amavasya, Purnima
+    status: pending
+  - title: JWT authentication middleware
+    status: pending
+  - title: Rate limiting (per user, per endpoint)
+    status: pending
+  - title: Request validation (Pydantic models)
+    status: pending
+  - title: CORS configuration
+    status: pending
+  - title: Error handling middleware
+    status: pending
+  - title: Logging setup
+    status: pending
+  - title: Health check endpoint
+    status: pending
+- name: 15. Database (Not Started)
+  items:
+  - title: users — id, name, email, password_hash, birth_date, birth_time, birth_place, zodiac_sign, is_premium,
+      created_at, updated_at
+    status: pending
+  - title: horoscopes — id, date, zodiac_sign, general, love, career, health, overall_score, lucky_number,
+      lucky_color, mood, created_at
+    status: pending
+  - title: tarot_cards — id, card_name, number, description, meaning, upright_interpretation, reversed_interpretation
+    status: pending
+  - title: tarot_draws — id, user_id, card_id, is_reversed, drawn_at
+    status: pending
+  - title: compatibility — id, sign1, sign2, score, description, love_advice, strengths, challenges
+    status: pending
+  - title: kundli_reports — id, user_id, person1_name, person1_birth_details, person2_name, person2_birth_details,
+      gun_milan_score, koota_scores (JSONB), analysis, has_manglik_dosha, created_at
+    status: pending
+  - title: fortune_history — id, user_id, zodiac_sign, topic, mood, fortune_text, created_at
+    status: pending
+  - title: premium_purchases — id, user_id, product_id, product_type, amount, currency, purchase_date,
+      expires_at
+    status: pending
+  - title: subscriptions — id, user_id, plan_name, price, currency, status, start_date, end_date, auto_renew
+    status: pending
+  - title: stories — id, title, summary, content, category, read_time, author, published_at, is_featured
+    status: pending
+  - title: bookmarks — id, user_id, story_id, created_at
+    status: pending
+  - title: Schema migrations setup (Alembic)
+    status: pending
+  - title: Seed data — all 12 zodiac signs, 78 tarot cards, 144 compatibility pairs
+    status: pending
+  - title: Connection pooling
+    status: pending
+  - title: Indexes on frequently queried columns (zodiac_sign, date, user_id)
+    status: pending
+  - title: Backup strategy
+    status: pending
+- name: 16. AI Integration (Not Started)
+  items:
+  - title: AI service abstraction layer — support multiple providers with fallback
+    status: pending
+  - title: 'Fortune generation prompts — template: "Generate a mystical fortune for a {sign} related to
+      {topic}. Tone should be {mood}-appropriate, positive and inspiring. Max 3 sentences."'
+    status: pending
+  - title: Horoscope generation prompts — daily predictions for each category (general, love, career,
+      health)
+    status: pending
+  - title: Personality insight prompts — detailed traits based on zodiac sign
+    status: pending
+  - title: Compatibility explanation prompts — relationship advice based on sign pairing
+    status: pending
+  - title: Tarot interpretation prompts — dynamic card readings based on context (user's sign, question,
+      card drawn)
+    status: pending
+  - title: Astrology story generation — weekly articles on trending astrology topics
+    status: pending
+  - title: 'Content caching strategy:'
+    status: pending
+  - title: Token usage tracking — monitor API costs
+    status: pending
+  - title: Content moderation — ensure AI outputs are appropriate
+    status: pending
+  - title: Fallback content — show cached/static content if AI API is down
+    status: pending
+- name: 17. Astrology Logic Engine (Not Started)
+  items:
+  - title: Western zodiac calculation — from birth date (month/day ranges) — already done in Flutter,
+      needs backend mirror
+    status: pending
+  - title: Vedic zodiac (Rashi) calculation — sidereal zodiac based on actual star positions
+    status: pending
+  - title: Nakshatra determination — 27 lunar mansions from birth moon position
+    status: pending
+  - title: 'Ashta Koota algorithm — 8 compatibility factors:'
+    status: pending
+  - title: Manglik Dosha detection — Mars in 1st/2nd/4th/7th/8th/12th house
+    status: pending
+  - title: Element-based compatibility — Fire/Earth/Air/Water pairing scores
+    status: pending
+  - title: Planetary position calculations — ephemeris-based planet positions for birth chart
+    status: pending
+  - title: House system calculations — 12 houses from ascendant
+    status: pending
+- name: 18. Push Notifications (Not Started)
+  items:
+  - title: FCM SDK integration in Flutter app
+    status: pending
+  - title: Firebase project setup (Android + iOS)
+    status: pending
+  - title: Device token registration — save to backend on login
+    status: pending
+  - title: Daily horoscope reminder — "Your horoscope for today is ready" at 8 AM
+    status: pending
+  - title: Tarot card of the day — "Your daily tarot card awaits" at 9 AM
+    status: pending
+  - title: Engagement nudges — "You haven't checked your fortune in 3 days" (re-engagement)
+    status: pending
+  - title: Weekly digest — "Your weekly cosmic forecast is here" on Mondays
+    status: pending
+  - title: Premium feature teasers — "Unlock your full birth chart" for free users
+    status: pending
+  - title: New story alerts — notification when new astrology article is published
+    status: pending
+  - title: Notification preferences screen — let users toggle notification types on/off
+    status: pending
+  - title: Server-side scheduled sending — Render worker service for batch sends
+    status: pending
+- name: Subscription Plans
+  items:
+  - title: 'Monthly Basic: ₹299/month — unlimited tarot, detailed horoscope'
+    status: pending
+  - title: 'Monthly Premium: ₹699/month — all Basic + kundli reports, compatibility insights, ad-free'
+    status: pending
+  - title: Annual plan — discounted rate (e.g., ₹2,999/year = ₹250/month)
+    status: pending
+  - title: Free trial — 7-day premium trial for new users
+    status: pending
+- name: One-Time Paid Reports
+  items:
+  - title: 'Full Birth Chart Report: ₹199'
+    status: pending
+  - title: 'Marriage Compatibility Report: ₹149'
+    status: pending
+  - title: 'Career Prediction Report: ₹149'
+    status: pending
+  - title: 'Annual Forecast Report: ₹299'
+    status: pending
+- name: Ad Integration
+  items:
+  - title: Google AdMob setup (Android + iOS)
+    status: pending
+  - title: Banner ads on home screen (free users)
+    status: pending
+  - title: Interstitial ads between readings (free users, max 1 per 5 minutes)
+    status: pending
+  - title: Rewarded video ads — watch ad to unlock 1 extra fortune/reading
+    status: pending
+- name: Premium Gating UI
+  items:
+  - title: Lock icon with gold shimmer on premium features
+    status: pending
+  - title: Blurred preview of premium content
+    status: pending
+  - title: '"Upgrade" CTA button with gradient gold styling'
+    status: pending
+  - title: Paywall screen with plan comparison
+    status: pending
+  - title: Restore purchases button
+    status: pending
+- name: Backend Support
+  items:
+  - title: Razorpay/Stripe payment webhook handlers
+    status: pending
+  - title: In-app purchase receipt validation (Google Play, App Store)
+    status: pending
+  - title: Subscription status tracking (active, expired, cancelled)
+    status: pending
+  - title: Grace period handling for failed payments
+    status: pending
+- name: Mobile App
+  items:
+  - title: Android release build — signed APK/AAB
+    status: pending
+  - title: Google Play Store listing — screenshots, description, icon, feature graphic
+    status: pending
+  - title: iOS release build — Archive via Xcode
+    status: pending
+  - title: Apple App Store listing — screenshots, description, review submission
+    status: pending
+  - title: App icon — design for both platforms (adaptive icon for Android)
+    status: pending
+  - title: Splash screen — native splash for Android + iOS
+    status: pending
+- name: Backend
+  items:
+  - title: Render Web Service — deploy FastAPI from GitHub
+    status: pending
+  - title: Render PostgreSQL — create managed database
+    status: pending
+  - title: Render Worker Service — background jobs (daily horoscope generation, notifications)
+    status: pending
+  - title: 'Environment variables:'
+    status: pending
+- name: DevOps
+  items:
+  - title: CI/CD pipeline — auto-test + deploy on push (GitHub Actions)
+    status: pending
+  - title: Staging environment — separate Render instance for testing
+    status: pending
+  - title: Error monitoring — Sentry integration (Flutter + backend)
+    status: pending
+  - title: Analytics — Firebase Analytics / Mixpanel for user behavior tracking
+    status: pending
+  - title: Performance monitoring — API response times, crash reporting
+    status: pending
+  - title: SSL/HTTPS — auto-configured on Render
+    status: pending
+- name: Scaling Roadmap
+  items:
+  - title: 'Stage 1 (0–10k users): Render free tier, no caching'
+    status: pending
+  - title: 'Stage 2 (10k–100k): Upgrade instance, add Redis caching, add worker'
+    status: pending
+  - title: 'Stage 3 (100k+): Multiple instances, load balancing, DB read replicas, CDN'
+    status: pending

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
@@ -11,10 +10,15 @@ import '../widgets/starry_background.dart';
 
 class HoroscopeScreen extends StatefulWidget {
   final String userSign;
+
+  /// 'western' or 'vedic' — the tradition the reading is generated for. Keeps
+  /// the detailed view consistent with the resolved reading identity from Home.
+  final String system;
   final HoroscopeData? initialHoroscope;
   const HoroscopeScreen({
     super.key,
     required this.userSign,
+    this.system = 'western',
     this.initialHoroscope,
   });
 
@@ -29,12 +33,19 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
   bool _isLoading = true;
   DateTime _selectedDate = DateTime.now();
 
+  /// 'daily' | 'weekly' | 'monthly'
+  String _period = 'daily';
+
+  /// Last loaded reading per period, so switching back avoids a spinner.
+  final Map<String, HoroscopeData> _cacheByPeriod = {};
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     if (widget.initialHoroscope != null) {
       horoscope = widget.initialHoroscope!;
+      _cacheByPeriod['daily'] = widget.initialHoroscope!;
       _isLoading = false;
     } else {
       _loadHoroscope();
@@ -55,12 +66,31 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
 
   Future<void> _loadHoroscope() async {
     if (mounted) setState(() => _isLoading = true);
-    final data = await ApiService.getHoroscope(widget.userSign);
+    final data = await ApiService.getHoroscope(
+      widget.userSign,
+      system: widget.system,
+      period: _period,
+    );
     if (mounted) {
       setState(() {
         horoscope = data;
+        if (data != null) _cacheByPeriod[_period] = data;
         _isLoading = false;
       });
+    }
+  }
+
+  void _selectPeriod(String period) {
+    if (period == _period && _cacheByPeriod.containsKey(period)) return;
+    setState(() => _period = period);
+    final cached = _cacheByPeriod[period];
+    if (cached != null) {
+      setState(() {
+        horoscope = cached;
+        _isLoading = false;
+      });
+    } else {
+      _loadHoroscope();
     }
   }
 
@@ -110,9 +140,11 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
   void _shareHoroscope() {
     if (horoscope == null) return;
     final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
-    final dateStr = DateFormat('MMMM d, yyyy').format(_selectedDate);
+    final dateStr = _period == 'daily'
+        ? DateFormat('MMMM d, yyyy').format(_selectedDate)
+        : _periodRangeLabel();
     final text =
-        '${sign.symbol} ${sign.name} Horoscope — $dateStr\n\n'
+        '${sign.symbol} ${sign.name} $_periodTitle Horoscope — $dateStr\n\n'
         '⭐ Overall Score: ${horoscope!.overallScore}%\n\n'
         '✨ General: ${horoscope!.general}\n\n'
         '❤️ Love: ${horoscope!.love}\n\n'
@@ -148,6 +180,23 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
     return DateFormat('MMM d').format(_selectedDate);
   }
 
+  String get _periodTitle => _period == 'weekly'
+      ? 'Weekly'
+      : _period == 'monthly'
+      ? 'Monthly'
+      : 'Daily';
+
+  String _periodRangeLabel() {
+    final now = DateTime.now();
+    if (_period == 'monthly') return DateFormat('MMMM yyyy').format(now);
+    if (_period == 'weekly') {
+      final monday = now.subtract(Duration(days: now.weekday - 1));
+      final sunday = monday.add(const Duration(days: 6));
+      return '${DateFormat('MMM d').format(monday)} – ${DateFormat('MMM d').format(sunday)}';
+    }
+    return _dateLabel;
+  }
+
   @override
   Widget build(BuildContext context) {
     final sign = zodiacSigns.firstWhere((z) => z.name == widget.userSign);
@@ -159,7 +208,10 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Text('Daily Horoscope', style: GoogleFonts.playfairDisplay()),
+          title: Text(
+            '$_periodTitle Horoscope',
+            style: GoogleFonts.playfairDisplay(),
+          ),
           backgroundColor: Colors.transparent,
           actions: [
             if (horoscope != null)
@@ -183,6 +235,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
         ),
         body: GestureDetector(
           onHorizontalDragEnd: (details) {
+            if (_period != 'daily') return;
             if (details.primaryVelocity == null) return;
             if (details.primaryVelocity! > 300) {
               _goToPreviousDay();
@@ -194,7 +247,12 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
             padding: const EdgeInsets.all(20),
             child: Column(
               children: [
-                _buildDateNavigator(isToday),
+                _buildPeriodSelector(),
+                const SizedBox(height: 16),
+                if (_period == 'daily')
+                  _buildDateNavigator(isToday)
+                else
+                  _buildPeriodLabel(),
                 const SizedBox(height: 16),
                 _buildSignHeader(sign),
                 const SizedBox(height: 24),
@@ -255,6 +313,76 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodSelector() {
+    Widget pill(String label, String value) {
+      final selected = _period == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => _selectPeriod(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              gradient: selected ? AppColors.gradientPurple : null,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          pill('Daily', 'daily'),
+          pill('Weekly', 'weekly'),
+          pill('Monthly', 'monthly'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPeriodLabel() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.accent.withAlpha(77)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.date_range, size: 16, color: AppColors.accent),
+          const SizedBox(width: 8),
+          Text(
+            _periodRangeLabel(),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 15,
+            ),
+          ),
+        ],
       ),
     );
   }
