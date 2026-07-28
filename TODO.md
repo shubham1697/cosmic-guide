@@ -39,10 +39,10 @@
 ### 💡 New Feature Ideas (from competitor analysis, adjusted for what already exists)
 
 - **Push notifications (FCM)** — the #1 retention driver; still not started.
-- **Real streak & reading history** — profile stats are hardcoded (`7 days`); persist tarot/fortune/horoscope draws.
-- **Shareable chart card** — `RepaintBoundary` → PNG → share sheet; cheap viral loop.
+- **Real streak & reading history** — ✅ DONE. `HistoryService` (SharedPreferences) records tarot/fortune/horoscope draws; Profile stats (Readings/Streak/Fortune) are now real, and a new Reading History screen (Profile → Reading History) shows a filterable, day-grouped timeline.
+- **Shareable chart card** — ✅ DONE. `ShareService.shareBoundary` captures a `RepaintBoundary` → PNG → native share sheet (share_plus). New `ShareableChartCard` widget renders a branded "Cosmic Blueprint" (Big 3: Sun/Moon/Rising) and `ShareCardScreen` resolves the Big 3 (real via `getBirthChart`, else estimated). Entry points: Chart header share icon + Profile → "Share Cosmic Card".
 - **Ask the Oracle** — free-text question → AI answer with astrological framing.
-- **"Both" compare view** — Western Sun vs Vedic Moon-rashi reading side by side (R5 remaining).
+- **"Both" compare view** — Western Sun vs Vedic Moon-rashi reading side by side ✅ DONE (R5).
 
 ---
 
@@ -52,7 +52,7 @@
 > Vedic users now get a Moon-rashi (Janma Rashi) daily reading via `system=vedic` once birth
 > time + place are known; otherwise the app nudges them and falls back to a Western reading.
 > **Order:** R1 + R4 (quick wins) → R2 + R3 (keystone) → R5 (polish).
-> **Progress:** R1 ✅ · R2 ✅ (backend) · R3 ✅ · R4 ✅ (nav-level) · R5 🚧 (glossary + North/South done; terminology & "both" compare remain).
+> **Progress:** R1 ✅ · R2 ✅ (backend) · R3 ✅ · R4 ✅ (nav-level) · R5 🚧 (glossary + North/South + "both" compare done; Jyotish terminology relabels remain).
 >
 > **Decision (settled):** adaptive single-tradition per user, with a **"Both" default** — navigation
 > and the daily-reading emphasis adapt to the chosen tradition.
@@ -98,7 +98,7 @@
 - [ ] **Jyotish terminology** in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — _kundli chart already uses Lagna/Nakshatra; audit + fold in R4-deferred Rising↔Lagna / Birth Chart↔Kundli relabels_
 - [x] **Glossary / "why signs differ"** explainer screen — new `AstroGlossaryScreen` (tropical vs. sidereal + ~24° Lahiri ayanamsa, plus Jyotish & Western term cards). Reachable via **Profile → Astrology Guide**. `flutter analyze` clean
 - [x] **Vedic wheel defaults to North/South** — already satisfied: `kundli_chart_screen.dart` defaults to `_KundliChartStyle.north` and uses Lagna/Nakshatra terminology (verified in R5)
-- [ ] **"Both" compare view** — reuse the Match screen's Western/Vedic tab pattern (Western Sun reading vs. Vedic Moon-rashi reading side by side)
+- [x] **"Both" compare view** — DONE (Jul 27). For `tradition == 'both'` users with birth details, Home now fetches the Vedic Moon-rashi reading alongside the Western Sun reading and shows a segmented Western/Vedic toggle (each segment displays its sign + today's score at a glance, Match-tab aesthetic). Tapping swaps the daily card + its tap-through to `HoroscopeScreen`; a subtle nudge prompts "both" users missing birth time/place to add them. Files: `lib/screens/home_screen.dart` (`_buildTraditionCompare`/`_buildCompareSegment`/`_buildBothVedicHint`, `_loadVedicReading`), `lib/main.dart` (passes `tradition` + birth details to Home). `flutter analyze` clean
 
 ---
 
@@ -224,7 +224,7 @@ Backend, auth, navigation, and infrastructure are **shared** across both tracks.
 - [x] Reversed card option — 30% chance reversed, 180° rotation, red glow/border, "Reversed" badge, unique reversed interpretations for all 78 cards
 - [x] Daily card of the day — auto-draw one card per day, cache result
 - [~] Card spread layouts — 3-card spread built (`lib/screens/tarot_spread_screen.dart`); Celtic Cross still pending
-- [ ] Card history / journal — save drawn cards with date, let user add notes
+- [~] Card history / journal — drawn cards now saved with date in the global Reading History (Profile → Reading History); per-card notes still pending
 - [ ] Card animation sound effects — swipe/flip audio feedback
 - [x] Backend integration — GET /tarot/draw, falls back to local mock deck
 
@@ -411,10 +411,10 @@ Backend, auth, navigation, and infrastructure are **shared** across both tracks.
 - [x] Zodiac avatar — 100px circle, purple gradient, gold 2px border, purple glow shadow, zodiac symbol (44px)
 - [x] User name — Playfair Display 28px bold
 - [x] Sign info line — "Scorpio ♏ | Oct 23 - Nov 21" format (14px muted)
-- [x] Stats row — 3 stats with dividers:
-  - Readings: 24 (hardcoded)
-  - Streak: 7 days (hardcoded)
-  - Fortune: 12 (hardcoded)
+- [x] Stats row — 3 stats with dividers (now real, derived from `HistoryService`):
+  - Readings — total recorded readings
+  - Streak — consecutive days with at least one reading
+  - Fortune — total fortunes generated
 - [x] Personality traits section — (see section 9 above)
 - [x] Sign details card — 3 rows with dividers:
   - Element (water drop icon)
@@ -429,7 +429,7 @@ Backend, auth, navigation, and infrastructure are **shared** across both tracks.
 - [ ] Edit profile — change name, update birth details
 - [ ] Profile photo — upload or choose avatar
 - [ ] Change birth details — re-enter DOB, recalculate sign
-- [ ] Real stats tracking — count actual readings, calculate real streak from usage dates
+- [x] Real stats tracking — real readings count + day streak from actual usage dates (`HistoryService`)
 - [ ] Dark/light theme toggle — currently dark only
 - [ ] Language selection — multi-language support (Hindi, etc.)
 - [ ] Account deletion — GDPR compliance, delete all user data

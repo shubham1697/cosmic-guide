@@ -6,6 +6,7 @@ import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
+import 'share_card_screen.dart';
 
 // ─── Planet color mapping ────────────────────────────────────────────────────
 
@@ -700,14 +701,32 @@ class _ChartScreenState extends State<ChartScreen>
           ),
         ),
         if (_isLoading)
-          const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: AppColors.accent,
+          const Padding(
+            padding: EdgeInsets.only(right: 4),
+            child: SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.accent,
+              ),
             ),
           ),
+        IconButton(
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ShareCardScreen(
+                sunSign: widget.userSign,
+                birthDate: widget.birthDate,
+                birthTime: widget.birthTime,
+                birthPlace: widget.birthPlace,
+              ),
+            ),
+          ),
+          icon: const Icon(Icons.ios_share),
+          color: AppColors.accent,
+          tooltip: 'Share your cosmic card',
+        ),
       ],
     );
   }

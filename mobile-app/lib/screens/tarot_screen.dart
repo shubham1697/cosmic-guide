@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
+import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 import 'tarot_spread_screen.dart';
 
@@ -49,6 +50,11 @@ class _TarotScreenState extends State<TarotScreen>
       _isReversed = result.isReversed;
     });
     _flipController.reset();
+    HistoryService.record(
+      type: ReadingType.tarot,
+      title: result.card.name,
+      subtitle: result.isReversed ? 'Reversed' : 'Upright',
+    );
   }
 
   void _revealCard() {

@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
+import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 
 class TarotSpreadScreen extends StatefulWidget {
@@ -78,6 +79,18 @@ class _TarotSpreadScreenState extends State<TarotSpreadScreen>
       _isDrawing = false;
       _allDrawn = _cards.every((c) => c != null);
     });
+
+    if (_allDrawn) {
+      final names = _cards
+          .whereType<TarotCard>()
+          .map((c) => c.name)
+          .join(' · ');
+      HistoryService.record(
+        type: ReadingType.tarot,
+        title: 'Three-Card Spread',
+        subtitle: names,
+      );
+    }
   }
 
   void _revealCard(int index) {

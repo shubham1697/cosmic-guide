@@ -3,9 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
+import '../services/sign_resolver.dart';
+import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
 import 'astro_glossary_screen.dart';
+import 'reading_history_screen.dart';
+import 'share_card_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userSign;
@@ -31,6 +35,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _birthPlace = '';
   String _tradition = 'both';
 
+  /// Headline sign for the chosen tradition: the tropical Sun sign for
+  /// Western/Both, or the sidereal Moon sign (Janma Rashi) when reading Vedic.
+  String _readingSign = '';
+  String _readingSystem = 'western';
+
+  /// The sidereal Moon sign (Janma Rashi), resolved for "both" readers so the
+  /// profile can show the Sun sign and the Janma Rashi side by side.
+  String _moonSign = '';
+
+  /// Cached reading stats so the stats row shows the last-known values
+  /// instantly (no flash of zeros) while fresh numbers load.
+  ReadingStats _lastStats = const ReadingStats.empty();
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +66,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _tradition = prefs.getString('tradition') ?? 'both';
       });
     }
+    await _resolveReadingSign();
+  }
+
+  /// Resolves the headline sign for the chosen tradition. Vedic readers see
+  /// their sidereal Moon sign (Janma Rashi); everyone else sees the Sun sign.
+  Future<void> _resolveReadingSign() async {
+    final identity = await SignResolver.resolve(
+      tradition: _tradition,
+      sunSign: _sign,
+      birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+      birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+      birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+    );
+    // "Both" readers also see their Janma Rashi below the Sun sign, so resolve
+    // the sidereal Moon sign alongside the primary (Western) identity.
+    String moon = '';
+    if (_tradition == 'both') {
+      final vedic = await SignResolver.resolve(
+        tradition: 'vedic',
+        sunSign: _sign,
+        birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+        birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+        birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+      );
+      if (vedic.system == 'vedic') moon = vedic.readingSign;
+    }
+    if (!mounted) return;
+    setState(() {
+      _readingSign = identity.readingSign;
+      _readingSystem = identity.system;
+      _moonSign = moon;
+    });
   }
 
   String _calculateZodiac(DateTime date) {
@@ -99,6 +148,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _birthPlace = birthPlace;
                   _tradition = tradition;
                 });
+                await _resolveReadingSign();
                 widget.onProfileUpdated?.call(name, sign);
               }
             },
@@ -108,11 +158,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final displaySign = _readingSign.isNotEmpty ? _readingSign : _sign;
     final sign = zodiacSigns.firstWhere(
-      (z) => z.name == _sign,
+      (z) => z.name == displaySign,
       orElse: () => zodiacSigns.first,
     );
-    final traits = _getTraits(_sign);
+    final traits = _getTraits(displaySign);
+    final isVedicReading = _readingSystem == 'vedic';
+    // "Both" readers get a second line with their Janma Rashi (Moon sign).
+    final showBothSigns = _tradition == 'both' && _moonSign.isNotEmpty;
+    final moonSign = showBothSigns
+        ? zodiacSigns.firstWhere(
+            (z) => z.name == _moonSign,
+            orElse: () => zodiacSigns.first,
+          )
+        : null;
 
     return StarryBackground(
       child: SafeArea(
@@ -132,13 +192,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                '${sign.name} ${sign.symbol} | ${sign.dateRange}',
-                style: const TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 14,
+              if (moonSign != null) ...[
+                Text(
+                  '☉ ${sign.name} ${sign.symbol} · Sun sign',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 2),
+                Text(
+                  '☽ ${moonSign.name} ${moonSign.symbol} · Janma Rashi',
+                  style: const TextStyle(
+                    color: AppColors.mysticTeal,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ] else
+                Text(
+                  isVedicReading
+                      ? '${sign.name} ${sign.symbol} · Janma Rashi (Moon)'
+                      : '${sign.name} ${sign.symbol} | ${sign.dateRange}',
+                  style: const TextStyle(
+                    color: AppColors.textMuted,
+                    fontSize: 14,
+                  ),
+                ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _openEditSheet,
@@ -315,23 +396,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildStatsRow() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        _buildStat('Readings', '0'),
-        Container(
-          width: 1,
-          height: 40,
-          color: AppColors.textMuted.withAlpha(51),
-        ),
-        _buildStat('Streak', '0 days'),
-        Container(
-          width: 1,
-          height: 40,
-          color: AppColors.textMuted.withAlpha(51),
-        ),
-        _buildStat('Fortune', '0'),
-      ],
+    return FutureBuilder<ReadingStats>(
+      future: HistoryService.stats(),
+      initialData: _lastStats,
+      builder: (context, snapshot) {
+        final stats = snapshot.data ?? _lastStats;
+        _lastStats = stats;
+        final streakLabel =
+            '${stats.streakDays} ${stats.streakDays == 1 ? 'day' : 'days'}';
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            _buildStat('Readings', '${stats.totalReadings}'),
+            Container(
+              width: 1,
+              height: 40,
+              color: AppColors.textMuted.withAlpha(51),
+            ),
+            _buildStat('Streak', streakLabel),
+            Container(
+              width: 1,
+              height: 40,
+              color: AppColors.textMuted.withAlpha(51),
+            ),
+            _buildStat('Fortune', '${stats.fortuneCount}'),
+          ],
+        );
+      },
     );
   }
 
@@ -522,6 +613,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems(BuildContext context) {
     final items = [
       _MenuItem(
+        Icons.ios_share,
+        'Share Cosmic Card',
+        AppColors.accent,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ShareCardScreen(
+              sunSign: _sign,
+              birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+              birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+              birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+            ),
+          ),
+        ),
+      ),
+      _MenuItem(
         Icons.menu_book_outlined,
         'Astrology Guide',
         AppColors.mysticTeal,
@@ -534,7 +640,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'Notifications',
         AppColors.accent,
       ),
-      _MenuItem(Icons.history, 'Reading History', AppColors.purple),
+      _MenuItem(
+        Icons.history,
+        'Reading History',
+        AppColors.purple,
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ReadingHistoryScreen()),
+          );
+          // Stats may have changed (or been cleared) — refresh the row.
+          if (mounted) setState(() {});
+        },
+      ),
       _MenuItem(Icons.settings_outlined, 'Settings', AppColors.textSecondary),
       _MenuItem(Icons.help_outline, 'Help & Support', AppColors.mysticTeal),
     ];

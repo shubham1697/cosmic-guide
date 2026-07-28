@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/fortune_options_data.dart';
 import '../services/api_service.dart';
+import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 
 class FortuneScreen extends StatefulWidget {
@@ -66,6 +67,14 @@ class _FortuneScreenState extends State<FortuneScreen>
     // Keep last 50 fortunes
     if (raw.length > 50) raw.removeRange(0, raw.length - 50);
     await prefs.setStringList('fortune_history', raw);
+    await HistoryService.record(
+      type: ReadingType.fortune,
+      title: [
+        _selectedTopic,
+        _selectedMood,
+      ].where((s) => s != null && s.isNotEmpty).join(' · '),
+      subtitle: fortune,
+    );
     _loadHistory();
   }
 
