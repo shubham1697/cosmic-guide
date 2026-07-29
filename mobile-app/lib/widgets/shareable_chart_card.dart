@@ -121,7 +121,10 @@ class ShareableChartCard extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text('✦', style: TextStyle(color: AppColors.accent, fontSize: 13)),
+        const Text(
+          '✦',
+          style: TextStyle(color: AppColors.accent, fontSize: 13),
+        ),
         const SizedBox(width: 8),
         Text(
           'COSMICGUIDE',
@@ -133,7 +136,10 @@ class ShareableChartCard extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        const Text('✦', style: TextStyle(color: AppColors.accent, fontSize: 13)),
+        const Text(
+          '✦',
+          style: TextStyle(color: AppColors.accent, fontSize: 13),
+        ),
       ],
     );
   }

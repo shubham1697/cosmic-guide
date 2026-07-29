@@ -52,7 +52,9 @@ class _ShareCardScreenState extends State<ShareCardScreen> {
     // Fallback estimation from the Sun sign (matches the Chart screen: Moon at
     // +4 signs, Rising at +8) so the card is always complete.
     final sunIdx = zodiacSigns.indexWhere((z) => z.name == widget.sunSign);
-    var moon = sunIdx >= 0 ? zodiacSigns[(sunIdx + 4) % 12].name : widget.sunSign;
+    var moon = sunIdx >= 0
+        ? zodiacSigns[(sunIdx + 4) % 12].name
+        : widget.sunSign;
     var rising = sunIdx >= 0
         ? zodiacSigns[(sunIdx + 8) % 12].name
         : widget.sunSign;
@@ -111,10 +113,7 @@ class _ShareCardScreenState extends State<ShareCardScreen> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
-          title: Text(
-            'Share Your Stars',
-            style: GoogleFonts.playfairDisplay(),
-          ),
+          title: Text('Share Your Stars', style: GoogleFonts.playfairDisplay()),
           backgroundColor: Colors.transparent,
         ),
         body: SafeArea(
