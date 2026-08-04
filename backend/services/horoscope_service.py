@@ -9,7 +9,7 @@ from data.mock.horoscope_data import HOROSCOPE_DATA, DEFAULT_HOROSCOPE
 
 logger = get_logger(__name__)
 
-# In-memory cache: { (zodiac_sign, "YYYY-MM-DD"): dict }
+# In-memory cache: { (zodiac_sign, system, "YYYY-MM-DD"): dict }
 # Ensures all requests in the same process return the same daily result.
 _horoscope_cache: dict = {}
 
@@ -64,20 +64,24 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
         return _horoscope_cache[cache_key]
 
     # ── 2. DB cache ──────────────────────────────────────────────────────────
-    if db is not None and system == "western":
+    if db is not None:
         try:
             from db.models import Horoscope
             t0 = time.perf_counter()
             cached = (
                 db.query(Horoscope)
-                .filter(Horoscope.zodiac_sign == zodiac_sign, Horoscope.date == today_str)
+                .filter(
+                    Horoscope.zodiac_sign == zodiac_sign,
+                    Horoscope.date == today_str,
+                    Horoscope.system == system,
+                )
                 .first()
             )
             elapsed_ms = (time.perf_counter() - t0) * 1000
             
             if cached:
-                log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", rows_affected=1, elapsed_ms=elapsed_ms)
-                logger.info("get_horoscope  source=db  sign=%s  date=%s", zodiac_sign, today_str)
+                log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str} system={system}", rows_affected=1, elapsed_ms=elapsed_ms)
+                logger.info("get_horoscope  source=db  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
                 result = {
                     "sign": zodiac_sign,
                     "date": today_str,
@@ -108,13 +112,15 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
         ai_data = generate_daily_horoscope(zodiac_sign, today, system=system)
         if ai_data:
             logger.info("get_horoscope  source=llm  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
-            # Persist in DB for subsequent requests today (western only)
-            if db is not None and system == "western":
+            # Persist in DB for subsequent requests today (western + vedic,
+            # disambiguated by the `system` column).
+            if db is not None:
                 try:
                     from db.models import Horoscope
                     row = Horoscope(
                         date=today_str,
                         zodiac_sign=zodiac_sign,
+                        system=system,
                         general=ai_data["general"],
                         love=ai_data["love"],
                         career=ai_data["career"],
@@ -126,7 +132,7 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
                     )
                     db.add(row)
                     db.commit()
-                    logger.debug("get_horoscope  persisted to DB  sign=%s", zodiac_sign)
+                    logger.debug("get_horoscope  persisted to DB  sign=%s  system=%s", zodiac_sign, system)
                 except Exception as exc:
                     logger.warning("get_horoscope  DB persist failed (%s)", exc)
                     db.rollback()

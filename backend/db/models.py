@@ -25,6 +25,8 @@ class Horoscope(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(String(10), index=True)  # YYYY-MM-DD
     zodiac_sign = Column(String(20), index=True)
+    # 'western' (tropical Sun sign) | 'vedic' (sidereal Moon rashi)
+    system = Column(String(10), index=True, default="western")
     general = Column(Text)
     love = Column(Text)
     career = Column(Text)
@@ -138,3 +140,21 @@ class KundliReport(Base):
     analysis = Column(Text)
     has_manglik_dosha = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DeviceToken(Base):
+    """A registered device for push notifications (FCM)."""
+    __tablename__ = "device_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(255), unique=True, index=True, nullable=False)  # FCM registration token
+    platform = Column(String(10))                    # android | ios
+    zodiac_sign = Column(String(20), index=True)     # user's sun sign (for personalization)
+    tradition = Column(String(10))                   # western | vedic | both
+    birth_date = Column(String(10))                  # YYYY-MM-DD (for future vedic resolution)
+    birth_time = Column(String(5))                   # HH:MM
+    birth_place = Column(String(255))
+    daily_horoscope_enabled = Column(Boolean, default=True, index=True)
+    last_notified_date = Column(String(10))          # YYYY-MM-DD dedup guard
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

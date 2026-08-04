@@ -1,0 +1,215 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../theme/app_theme.dart';
+import '../services/notification_service.dart';
+import '../widgets/starry_background.dart';
+
+/// Settings screen for push notifications. Lets the user toggle the daily
+/// horoscope reminder, shows whether push is fully configured, and offers a
+/// test send. Preferences are persisted locally and synced to the backend by
+/// [NotificationService] once a push token is available.
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
+
+  @override
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
+}
+
+class _NotificationsScreenState extends State<NotificationsScreen> {
+  bool _loading = true;
+  bool _busy = false;
+  bool _enabled = false;
+  bool _pushAvailable = false;
+
+  String _sign = 'Aries';
+  String _tradition = 'both';
+  String _birthDate = '';
+  String _birthTime = '';
+  String _birthPlace = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = await NotificationService.isEnabled();
+    final available = await NotificationService.isPushAvailable();
+    if (!mounted) return;
+    setState(() {
+      _sign = prefs.getString('userSign') ?? 'Aries';
+      _tradition = prefs.getString('tradition') ?? 'both';
+      _birthDate = prefs.getString('birthDate') ?? '';
+      _birthTime = prefs.getString('birthTime') ?? '';
+      _birthPlace = prefs.getString('birthPlace') ?? '';
+      _enabled = enabled;
+      _pushAvailable = available;
+      _loading = false;
+    });
+  }
+
+  Future<void> _toggle(bool value) async {
+    setState(() {
+      _enabled = value;
+      _busy = true;
+    });
+    final synced = await NotificationService.setEnabled(
+      enabled: value,
+      zodiacSign: _sign,
+      tradition: _tradition,
+      birthDate: _birthDate,
+      birthTime: _birthTime,
+      birthPlace: _birthPlace,
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    final messenger = ScaffoldMessenger.of(context);
+    if (value && !synced) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Saved. Reminders will start once push is set up.'),
+        ),
+      );
+    } else {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            value ? 'Daily reminder turned on.' : 'Daily reminder turned off.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sendTest() async {
+    setState(() => _busy = true);
+    final sent = await NotificationService.sendTest();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sent
+              ? 'Test notification sent.'
+              : 'Push not configured yet — set up Firebase to send.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StarryBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text('Notifications', style: GoogleFonts.playfairDisplay()),
+          backgroundColor: Colors.transparent,
+        ),
+        body: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.accent),
+              )
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                children: [
+                  _buildStatusCard(),
+                  const SizedBox(height: 16),
+                  _buildReminderCard(),
+                  const SizedBox(height: 20),
+                  _buildTestButton(),
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildStatusCard() {
+    final active = _pushAvailable;
+    final color = active ? AppColors.health : AppColors.textMuted;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withAlpha(90)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            active ? Icons.notifications_active : Icons.info_outline,
+            color: color,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              active
+                  ? 'Push notifications are active on this device.'
+                  : 'Push isn\'t set up on this device yet. Your preferences are '
+                        'saved and will apply automatically once notifications '
+                        'are enabled for the app.',
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReminderCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SwitchListTile(
+        value: _enabled,
+        onChanged: _busy ? null : _toggle,
+        activeThumbColor: AppColors.accent,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        title: Text(
+          'Daily horoscope reminder',
+          style: GoogleFonts.poppins(
+            color: AppColors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: const Padding(
+          padding: EdgeInsets.only(top: 4),
+          child: Text(
+            'A gentle nudge with your reading at 8:00 AM.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTestButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _busy ? null : _sendTest,
+        icon: const Icon(Icons.send_outlined, size: 18),
+        label: const Text('Send test notification'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.accent,
+          side: const BorderSide(color: AppColors.accent),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+    );
+  }
+}

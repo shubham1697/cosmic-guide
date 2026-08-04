@@ -38,6 +38,7 @@ services:
       - IPHONE_LLM_BASE_URL=${IPHONE_LLM_BASE_URL:-http://192.168.29.162:8080/v1}
       - IPHONE_LLM_MODEL=${IPHONE_LLM_MODEL:-base}
       - IPHONE_LLM_API_KEY=${IPHONE_LLM_API_KEY:-not-needed}
+      - FCM_CREDENTIALS_PATH=${FCM_CREDENTIALS_PATH:-/app/secrets/fcm.json}
     volumes:
       - ./backend:/app
       - ./shared:/app/shared

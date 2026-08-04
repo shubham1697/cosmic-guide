@@ -400,4 +400,111 @@ class ApiService {
       return null;
     });
   }
+
+  // ── Push notifications ─────────────────────────────────────────────────────
+
+  /// Register (or update) this device's push token so it can receive daily
+  /// reminders. Upserts by token on the backend. Returns true on success.
+  static Future<bool> registerDeviceToken({
+    required String token,
+    required String platform,
+    String? zodiacSign,
+    String? tradition,
+    String? birthDate,
+    String? birthTime,
+    String? birthPlace,
+    bool dailyHoroscopeEnabled = true,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/notifications/register'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'token': token,
+              'platform': platform,
+              'zodiacSign': zodiacSign,
+              'tradition': tradition,
+              'birthDate': birthDate,
+              'birthTime': birthTime,
+              'birthPlace': birthPlace,
+              'dailyHoroscopeEnabled': dailyHoroscopeEnabled,
+            }),
+          )
+          .timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('registerDeviceToken error: $e');
+      return false;
+    }
+  }
+
+  /// Remove this device's token from the backend (e.g. on sign-out or opt-out).
+  static Future<bool> unregisterDeviceToken(String token) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/notifications/unregister'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'token': token}),
+          )
+          .timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('unregisterDeviceToken error: $e');
+      return false;
+    }
+  }
+
+  /// Toggle the daily horoscope reminder for an already-registered device.
+  static Future<bool> updateNotificationPreferences({
+    required String token,
+    required bool dailyHoroscopeEnabled,
+  }) async {
+    try {
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/notifications/preferences'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'token': token,
+              'dailyHoroscopeEnabled': dailyHoroscopeEnabled,
+            }),
+          )
+          .timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('updateNotificationPreferences error: $e');
+      return false;
+    }
+  }
+
+  /// Ask the backend to send a one-off test push to [token]. Returns whether
+  /// the server actually dispatched it (false when FCM isn't configured yet).
+  static Future<bool> sendTestPush({
+    required String token,
+    String? title,
+    String? body,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/notifications/test'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({
+              'token': token,
+              if (title != null) 'title': title,
+              if (body != null) 'body': body,
+            }),
+          )
+          .timeout(_timeout);
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as Map<String, dynamic>;
+        return data['sent'] == true;
+      }
+    } catch (e) {
+      debugPrint('sendTestPush error: $e');
+    }
+    return false;
+  }
 }

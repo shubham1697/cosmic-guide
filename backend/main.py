@@ -11,7 +11,8 @@ from logger import configure_logging, get_logger
 from audit import audit_inbound, new_request_id, set_request_id
 from db.database import engine, Base, get_db
 from db import models  # noqa: F401 — register ORM models on Base.metadata before create_all
-from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic
+from shared.db_migrations import ensure_horoscope_system_column
+from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic, notifications
 
 # Boot logging before anything else
 configure_logging()
@@ -22,6 +23,10 @@ logger.info("CosmicGuide API starting up — log_level=%s  ai_model=%s",
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
+
+# Patch pre-existing tables for columns added after they were first created
+# (create_all() only creates missing tables — it never alters existing ones).
+ensure_horoscope_system_column(engine, logger)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -472,6 +477,19 @@ app.include_router(kundli.router, prefix=settings.API_PREFIX)
 app.include_router(stories.router, prefix=settings.API_PREFIX)
 app.include_router(chart.router, prefix=settings.API_PREFIX)
 app.include_router(vedic.router, prefix=settings.API_PREFIX)
+app.include_router(notifications.router, prefix=settings.API_PREFIX)
+
+
+@app.on_event("startup")
+def _on_startup():
+    from services.scheduler import start_scheduler
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def _on_shutdown():
+    from services.scheduler import shutdown_scheduler
+    shutdown_scheduler()
 
 
 @app.get("/", tags=["Root"])

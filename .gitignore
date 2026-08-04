@@ -25,3 +25,11 @@ backend/logs/
 
 # Dashboard generated snapshots
 dashboard/data/
+
+# Firebase / FCM
+# Server-side service-account key (SECRET — grants send access, never commit)
+backend/secrets/
+# Client config (contains project API keys; commit later if desired)
+mobile-app/android/app/google-services.json
+mobile-app/ios/Runner/GoogleService-Info.plist
+mobile-app/lib/firebase_options.dart

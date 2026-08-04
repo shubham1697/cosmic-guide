@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'models/zodiac.dart';
 import 'services/api_service.dart';
@@ -12,7 +14,16 @@ import 'screens/profile_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    // Non-fatal: platforms without Firebase config (e.g. desktop) still run.
+    debugPrint('Firebase init skipped: $e');
+  }
   runApp(const CosmicGuideApp());
 }
 

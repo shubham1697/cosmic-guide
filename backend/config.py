@@ -65,6 +65,15 @@ class Settings:
     IPHONE_LLM_TIMEOUT: int = _llm.iphone_llm_timeout
     IPHONE_LLM_MAX_TOKENS: int = _llm.iphone_llm_max_tokens
 
+    # ── Push notifications (Firebase Cloud Messaging) ──
+    # Absolute path to a Firebase service-account JSON. When unset, notification
+    # endpoints still work but sends are no-ops (safe for local dev / CI).
+    FCM_CREDENTIALS_PATH: str = os.getenv("FCM_CREDENTIALS_PATH", "")
+    # Hour of day (0-23, server/container timezone) to send the daily reminder.
+    DAILY_REMINDER_HOUR: int = int(os.getenv("DAILY_REMINDER_HOUR", "8"))
+    # Master switch for the in-process scheduler (turn off in tests/multi-worker).
+    ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
+
     # Logging — set LOG_LEVEL env var on Render to control verbosity
     # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")

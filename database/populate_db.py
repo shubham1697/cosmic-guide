@@ -72,6 +72,12 @@ VEDIC_MOCK_FILE = os.path.join(
 # Ensure all tables exist on the target DB
 Base.metadata.create_all(engine)
 
+# Patch pre-existing tables for columns added after first creation (create_all
+# never alters an existing table). Keeps the populator safe if it runs before
+# the API backend has migrated the shared database.
+from shared.db_migrations import ensure_horoscope_system_column  # noqa: E402
+ensure_horoscope_system_column(engine, log)
+
 
 # ── Ollama helpers ────────────────────────────────────────────────────────────
 

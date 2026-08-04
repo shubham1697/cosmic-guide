@@ -320,6 +320,34 @@ class RemedyHomeSummary(CamelModel):
     guidance: str
 
 
+# --- Notification Schemas ---
+
+class DeviceTokenRegister(CamelModel):
+    token: str = Field(..., min_length=10)
+    platform: str = Field(..., pattern="^(android|ios)$")
+    zodiac_sign: Optional[str] = None
+    tradition: Optional[str] = None
+    birth_date: Optional[str] = None
+    birth_time: Optional[str] = None
+    birth_place: Optional[str] = None
+    daily_horoscope_enabled: Optional[bool] = True
+
+
+class TokenRef(CamelModel):
+    token: str = Field(..., min_length=10)
+
+
+class NotificationPreferences(CamelModel):
+    token: str = Field(..., min_length=10)
+    daily_horoscope_enabled: bool
+
+
+class TestPushRequest(CamelModel):
+    token: str = Field(..., min_length=10)
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+
 class VedicHomeSummaryResponse(CamelModel):
     location: VedicLocationSummary
     panchang: PanchangSummary

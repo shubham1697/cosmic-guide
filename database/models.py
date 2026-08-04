@@ -25,6 +25,8 @@ class Horoscope(Base):
     id = Column(Integer, primary_key=True, index=True)
     date = Column(String(10), index=True)
     zodiac_sign = Column(String(20), index=True)
+    # 'western' (tropical Sun sign) | 'vedic' (sidereal Moon rashi)
+    system = Column(String(10), index=True, default="western")
     general = Column(Text)
     love = Column(Text)
     career = Column(Text)

@@ -22,10 +22,15 @@ logger = get_logger(__name__)
 #  Horoscopes
 # ─────────────────────────────────────────────────────────────────────────────
 
-def get_horoscope(db: Session, zodiac_sign: str, for_date: date) -> Optional[dict]:
+def get_horoscope(db: Session, zodiac_sign: str, for_date: date,
+                  system: str = "western") -> Optional[dict]:
     row = (
         db.query(Horoscope)
-        .filter(Horoscope.date == for_date.isoformat(), Horoscope.zodiac_sign == zodiac_sign)
+        .filter(
+            Horoscope.date == for_date.isoformat(),
+            Horoscope.zodiac_sign == zodiac_sign,
+            Horoscope.system == system,
+        )
         .first()
     )
     if not row:
@@ -33,9 +38,12 @@ def get_horoscope(db: Session, zodiac_sign: str, for_date: date) -> Optional[dic
     return _horoscope_to_dict(row)
 
 
-def get_all_horoscopes(db: Session, for_date: date) -> list[dict]:
-    rows = db.query(Horoscope).filter(Horoscope.date == for_date.isoformat()).all()
-    return [_horoscope_to_dict(r) for r in rows]
+def get_all_horoscopes(db: Session, for_date: date,
+                       system: Optional[str] = None) -> list[dict]:
+    query = db.query(Horoscope).filter(Horoscope.date == for_date.isoformat())
+    if system is not None:
+        query = query.filter(Horoscope.system == system)
+    return [_horoscope_to_dict(r) for r in query.all()]
 
 
 def save_horoscope(db: Session, data: dict, commit: bool = True) -> bool:
@@ -43,6 +51,7 @@ def save_horoscope(db: Session, data: dict, commit: bool = True) -> bool:
         db.add(Horoscope(
             date=data["date"],
             zodiac_sign=data["zodiac_sign"],
+            system=data.get("system", "western"),
             general=data.get("general", ""),
             love=data.get("love", ""),
             career=data.get("career", ""),
@@ -61,10 +70,15 @@ def save_horoscope(db: Session, data: dict, commit: bool = True) -> bool:
         return False
 
 
-def delete_horoscope(db: Session, zodiac_sign: str, for_date: date, commit: bool = True) -> bool:
+def delete_horoscope(db: Session, zodiac_sign: str, for_date: date,
+                     system: str = "western", commit: bool = True) -> bool:
     row = (
         db.query(Horoscope)
-        .filter(Horoscope.date == for_date.isoformat(), Horoscope.zodiac_sign == zodiac_sign)
+        .filter(
+            Horoscope.date == for_date.isoformat(),
+            Horoscope.zodiac_sign == zodiac_sign,
+            Horoscope.system == system,
+        )
         .first()
     )
     if row:
@@ -75,11 +89,12 @@ def delete_horoscope(db: Session, zodiac_sign: str, for_date: date, commit: bool
     return False
 
 
-def horoscopes_exist(db: Session, for_date: date) -> set[str]:
+def horoscopes_exist(db: Session, for_date: date,
+                     system: str = "western") -> set[str]:
     return {
         row.zodiac_sign
         for row in db.query(Horoscope.zodiac_sign)
-        .filter(Horoscope.date == for_date.isoformat())
+        .filter(Horoscope.date == for_date.isoformat(), Horoscope.system == system)
         .all()
     }
 

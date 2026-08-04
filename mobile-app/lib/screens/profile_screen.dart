@@ -8,6 +8,7 @@ import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
 import 'astro_glossary_screen.dart';
+import 'notifications_screen.dart';
 import 'reading_history_screen.dart';
 import 'share_card_screen.dart';
 
@@ -639,6 +640,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         Icons.notifications_outlined,
         'Notifications',
         AppColors.accent,
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const NotificationsScreen())),
       ),
       _MenuItem(
         Icons.history,
