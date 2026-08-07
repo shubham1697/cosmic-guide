@@ -16,6 +16,9 @@ class ShareableChartCard extends StatelessWidget {
   final String risingSign;
   final bool isEstimated;
 
+  /// Vedic framing: label the ascendant "Lagna" instead of "Rising".
+  final bool isVedic;
+
   const ShareableChartCard({
     super.key,
     required this.name,
@@ -23,6 +26,7 @@ class ShareableChartCard extends StatelessWidget {
     required this.moonSign,
     required this.risingSign,
     this.isEstimated = false,
+    this.isVedic = false,
   });
 
   static const _sunColor = Color(0xFFFFD700);
@@ -84,7 +88,7 @@ class ShareableChartCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           _big3Row(
-            'Rising ↑',
+            isVedic ? 'Lagna ↑' : 'Rising ↑',
             _sign(risingSign),
             'How others see you',
             _risingColor,
@@ -92,7 +96,9 @@ class ShareableChartCard extends StatelessWidget {
           const SizedBox(height: 24),
           if (isEstimated) ...[
             Text(
-              '✦ Moon & Rising estimated',
+              isVedic
+                  ? '✦ Moon & Lagna estimated'
+                  : '✦ Moon & Rising estimated',
               style: GoogleFonts.poppins(
                 color: AppColors.textMuted,
                 fontSize: 10,

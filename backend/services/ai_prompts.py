@@ -114,6 +114,87 @@ Reference the rashi lord {lord} and the Moon's influence naturally. Keep it warm
 
 
 # ────────────────────────────────────────────────────────────────────────────
+#  PERSONALIZED HOROSCOPE PROMPTS  (real natal chart + today's transits)
+# ────────────────────────────────────────────────────────────────────────────
+
+def _format_astro_context(context: dict) -> str:
+    """Render the natal chart + today's transits as a compact block for the LLM."""
+    lines: list[str] = []
+
+    big3 = context.get("big3") or {}
+    if big3:
+        rising = big3.get("rising", {})
+        rising_note = " (rising estimated — no exact birth time)" if rising.get("is_estimated") else ""
+        lines.append(
+            f"- Natal Big Three: Sun in {big3.get('sun', {}).get('sign', '?')}, "
+            f"Moon in {big3.get('moon', {}).get('sign', '?')}, "
+            f"Ascendant in {rising.get('sign', '?')}{rising_note}."
+        )
+
+    nak = context.get("moon_nakshatra")
+    if nak:
+        lines.append(
+            f"- Moon nakshatra: {nak.get('name')} "
+            f"(pada {nak.get('pada')}, ruled by {nak.get('lord')})."
+        )
+
+    transit_aspects = context.get("transit_aspects") or []
+    if transit_aspects:
+        lines.append("- Today's transits to the natal chart (tightest orb first):")
+        for a in transit_aspects[:6]:
+            retro = " retrograde" if a.get("is_retrograde") else ""
+            lines.append(
+                f"    \u00b7 transiting {a['transit_planet']}{retro} in {a['transit_sign']} "
+                f"{a['aspect'].lower()} natal {a['natal_planet']} "
+                f"(in {a['natal_sign']}, orb {a['orb']}\u00b0)"
+            )
+    else:
+        transits = context.get("transits") or []
+        if transits:
+            sky = ", ".join(
+                f"{t['name']} in {t['sign']}" + ("\u211e" if t.get("is_retrograde") else "")
+                for t in transits[:7]
+            )
+            lines.append(f"- Sky today: {sky}.")
+
+    return "\n".join(lines) if lines else "- (chart data unavailable)"
+
+
+def personalized_horoscope_prompt(zodiac_sign: str, for_date: date, context: dict) -> str:
+    """Daily Western reading grounded in this person's real natal chart and the
+    live transits aspecting it — a genuine transit-to-natal reading."""
+    base = horoscope_prompt(zodiac_sign, for_date)
+    astro = _format_astro_context(context)
+    return (
+        f"{base}\n\n"
+        "IMPORTANT: This reading is PERSONAL to one individual, not a generic "
+        f"{zodiac_sign} Sun-sign column. Ground every section in their actual "
+        "chart and today's real transits below — name the specific planets, "
+        "signs, houses, and aspects that are active, and explain what each means "
+        "for them today. Weave the astrology in naturally as an expert would; do "
+        "not list it mechanically or invent placements not given.\n\n"
+        f"This person's natal chart & today's sky:\n{astro}"
+    )
+
+
+def vedic_personalized_horoscope_prompt(moon_rashi: str, for_date: date, context: dict) -> str:
+    """Daily Vedic reading grounded in this person's real sidereal chart, Moon
+    nakshatra, and the live graha transits aspecting it."""
+    base = vedic_horoscope_prompt(moon_rashi, for_date)
+    astro = _format_astro_context(context)
+    return (
+        f"{base}\n\n"
+        "IMPORTANT: This reading is PERSONAL to one individual (Jyotish), not a "
+        "generic rashi column. Ground every section in their actual sidereal "
+        "kundli, Janma Rashi, Moon nakshatra, and today's real graha transits "
+        "below — name the specific grahas, rashis, bhavas, and aspects that are "
+        "active for them today. Weave it in naturally; do not invent placements "
+        "not given.\n\n"
+        f"This person's kundli & today's sky:\n{astro}"
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
 #  PERIODIC HOROSCOPE PROMPTS  (weekly / monthly — same JSON shape as daily)
 # ────────────────────────────────────────────────────────────────────────────
 

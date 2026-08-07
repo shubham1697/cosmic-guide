@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
+import '../widgets/energy_forecast_chart.dart';
 import '../widgets/starry_background.dart';
 
 class HoroscopeScreen extends StatefulWidget {
@@ -15,11 +16,19 @@ class HoroscopeScreen extends StatefulWidget {
   /// the detailed view consistent with the resolved reading identity from Home.
   final String system;
   final HoroscopeData? initialHoroscope;
+
+  /// Birth details enable the personalized energy forecast on this screen.
+  final String? birthDate;
+  final String? birthTime;
+  final String? birthPlace;
   const HoroscopeScreen({
     super.key,
     required this.userSign,
     this.system = 'western',
     this.initialHoroscope,
+    this.birthDate,
+    this.birthTime,
+    this.birthPlace,
   });
 
   @override
@@ -39,6 +48,11 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
   /// Last loaded reading per period, so switching back avoids a spinner.
   final Map<String, HoroscopeData> _cacheByPeriod = {};
 
+  /// 30-day personalized energy forecast (deterministic scores), loaded once
+  /// when birth details are available.
+  List<ForecastPoint>? _forecast;
+  ForecastPoint? _bestDay;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +64,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
     } else {
       _loadHoroscope();
     }
+    _loadForecast();
   }
 
   @override
@@ -78,6 +93,23 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadForecast() async {
+    final bd = widget.birthDate;
+    if (bd == null || bd.isEmpty) return;
+    final res = await ApiService.getForecast(
+      birthDate: bd,
+      birthTime: widget.birthTime,
+      birthPlace: widget.birthPlace,
+      system: widget.system,
+      days: 30,
+    );
+    if (!mounted || res == null) return;
+    setState(() {
+      _forecast = res.points;
+      _bestDay = res.bestDay;
+    });
   }
 
   void _selectPeriod(String period) {
@@ -275,6 +307,11 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
                   )
                 else ...[
                   _buildScoreRing(),
+                  if (horoscope!.moodSummary != null &&
+                      horoscope!.moodSummary!.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    _buildWhyLine(),
+                  ],
                   const SizedBox(height: 24),
                   _buildTabBar(),
                   const SizedBox(height: 16),
@@ -308,6 +345,12 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
                   ),
                   const SizedBox(height: 24),
                   _buildLuckySection(),
+                  if (_period == 'daily' &&
+                      _forecast != null &&
+                      _forecast!.length >= 2) ...[
+                    const SizedBox(height: 24),
+                    _buildForecastSection(),
+                  ],
                 ],
               ],
             ),
@@ -466,12 +509,16 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
   }
 
   Widget _buildScoreRing() {
+    final band = horoscope!.band;
+    final scoreColor = band != null
+        ? forecastScoreColor(horoscope!.overallScore)
+        : AppColors.accent;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: AppColors.gradientCard,
-        border: Border.all(color: AppColors.accent.withAlpha(77), width: 2),
+        border: Border.all(color: scoreColor.withAlpha(90), width: 2),
       ),
       child: Column(
         children: [
@@ -480,15 +527,106 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
             style: GoogleFonts.playfairDisplay(
               fontSize: 40,
               fontWeight: FontWeight.bold,
-              color: AppColors.accent,
+              color: scoreColor,
             ),
           ),
-          const Text(
-            'Overall',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+          Text(
+            band ?? 'Overall',
+            style: TextStyle(
+              color: band != null ? scoreColor : AppColors.textMuted,
+              fontSize: band != null ? 13 : 14,
+              fontWeight: band != null ? FontWeight.w700 : FontWeight.w400,
+              letterSpacing: band != null ? 0.5 : 0,
+            ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildWhyLine() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.accent.withAlpha(40)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.auto_graph, size: 16, color: AppColors.accent),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              horoscope!.moodSummary!,
+              style: const TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForecastSection() {
+    final best = _bestDay;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.show_chart, color: AppColors.accent, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              'Energy forecast',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Your day-by-day cosmic energy for the month ahead',
+          style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.fromLTRB(8, 12, 12, 8),
+          decoration: BoxDecoration(
+            gradient: AppColors.gradientCard,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.accent.withAlpha(40)),
+          ),
+          child: EnergyForecastChart(points: _forecast!, bestDay: best),
+        ),
+        if (best != null) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(Icons.star, size: 15, color: forecastScoreColor(best.score)),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Best day ahead: ${DateFormat('EEE, MMM d').format(best.date)} '
+                  '· ${best.band} (${best.score}%)',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 

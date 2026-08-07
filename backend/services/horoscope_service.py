@@ -17,6 +17,12 @@ _horoscope_cache: dict = {}
 #   { (zodiac_sign, system, period, period_key): dict }
 _periodic_cache: dict = {}
 
+# In-memory cache for PERSONALIZED daily readings (natal chart + transits):
+#   { (zodiac_sign, system, "YYYY-MM-DD", birth_hash): dict }
+# Kept separate from the shared per-sign caches so one person's chart-specific
+# reading is never served to (or persisted for) everyone with that sign.
+_personalized_cache: dict = {}
+
 
 def _mock_horoscope(zodiac_sign: str, today_str: str) -> dict:
     template = HOROSCOPE_DATA.get(zodiac_sign, DEFAULT_HOROSCOPE)
@@ -34,7 +40,162 @@ def _mock_horoscope(zodiac_sign: str, today_str: str) -> dict:
     }
 
 
-def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
+def _build_personalized_context(birth_date: str, birth_time, birth_place, system: str) -> dict:
+    """Assemble the natal chart, today's transits, and the transit-to-natal
+    aspects that a personalized reading is grounded in. Western readings use the
+    tropical zodiac; vedic readings use the sidereal (Lahiri) zodiac throughout.
+    """
+    from services.birth_chart_service import (
+        calculate_birth_chart,
+        calculate_current_transits,
+        calculate_transit_aspects_to_natal,
+    )
+
+    sidereal = system == "vedic"
+    natal = calculate_birth_chart(
+        birth_date=birth_date,
+        birth_time=birth_time,
+        birth_place=birth_place,
+        sidereal=sidereal,
+    )
+    # Sample at noon UTC so today's score is stable through the day and matches
+    # the forecast's point for today (which is also sampled at noon).
+    from datetime import date as _date, datetime as _dt, timezone as _tz
+    _t = _date.today()
+    transits = calculate_current_transits(
+        sidereal=sidereal, when=_dt(_t.year, _t.month, _t.day, 12, 0, tzinfo=_tz.utc)
+    )
+    transit_aspects = calculate_transit_aspects_to_natal(natal["planets"], transits)
+    return {
+        "big3": natal.get("big3", {}),
+        "moon_nakshatra": natal.get("moon_nakshatra"),
+        "transits": transits,
+        "transit_aspects": transit_aspects,
+    }
+
+
+def _get_personalized_horoscope(zodiac_sign: str, system: str, today, today_str: str,
+                                birth_date: str, birth_time, birth_place):
+    """Return a genuinely personal daily reading (natal chart + live transits),
+    or None if it can't be produced so the caller falls back to the generic one.
+
+    Cached per (sign, system, date, birth_hash) in ``_personalized_cache`` and
+    never written to the shared per-sign DB cache.
+    """
+    import hashlib
+
+    key_src = f"{birth_date}|{birth_time or ''}|{birth_place or ''}"
+    birth_hash = hashlib.sha256(key_src.encode()).hexdigest()[:12]
+    cache_key = (zodiac_sign, system, today_str, birth_hash)
+    if cache_key in _personalized_cache:
+        logger.info("get_horoscope  source=memory(personal)  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
+        return _personalized_cache[cache_key]
+
+    try:
+        context = _build_personalized_context(birth_date, birth_time, birth_place, system)
+    except Exception as exc:
+        logger.warning("get_horoscope  personalization context failed (%s)  sign=%s", exc, zodiac_sign)
+        return None
+
+    try:
+        from services.ai_service import generate_daily_horoscope
+        ai_data = generate_daily_horoscope(zodiac_sign, today, system=system, astro_context=context)
+    except Exception as exc:
+        logger.warning("get_horoscope  personalized AI exception (%s)  sign=%s", exc, zodiac_sign)
+        return None
+
+    if not ai_data:
+        return None
+
+    # Ground the headline score, its band label, and a one-line "why" in the
+    # real chart rather than the LLM's guess.
+    from services.birth_chart_service import describe_day
+    day = describe_day(context.get("transit_aspects", []))
+    if day is not None:
+        ai_data["overall_score"] = day["score"]
+        ai_data["band"] = day["band"]
+        ai_data["mood_summary"] = day["summary"]
+
+    logger.info("get_horoscope  source=llm(personal)  sign=%s  system=%s  date=%s  score=%s  band=%s",
+                zodiac_sign, system, today_str, ai_data.get("overall_score"), ai_data.get("band"))
+    result = {
+        "sign": zodiac_sign,
+        "date": today_str,
+        **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
+        "personalized": True,
+    }
+    _personalized_cache[cache_key] = result
+    return result
+
+
+# In-memory cache for the personalized energy forecast (full 30-day series):
+#   { (birth_hash, system, "YYYY-MM-DD"): list[dict] }
+_forecast_cache: dict = {}
+_FORECAST_MAX_DAYS = 30
+
+
+def get_forecast(birth_date: str, birth_time=None, birth_place=None,
+                 system: str = "western", days: int = 30):
+    """A personalized day-by-day energy forecast: the deterministic transit-to-
+    natal score for each of the next ``days`` days (capped at 30), plus the best
+    day in that window. Pure astronomy — no LLM. Returns ``(points, best_day)``.
+
+    The full 30-day series is computed once per chart per day and then sliced,
+    so the natal chart (and its geocoding) is only calculated once.
+    """
+    import hashlib
+    from datetime import date as _date, datetime as _dt, timedelta, timezone as _tz
+
+    sidereal = system == "vedic"
+    days = max(1, min(days, _FORECAST_MAX_DAYS))
+    today = _date.today()
+
+    key_src = f"{birth_date}|{birth_time or ''}|{birth_place or ''}"
+    birth_hash = hashlib.sha256(key_src.encode()).hexdigest()[:12]
+    cache_key = (birth_hash, system, today.isoformat())
+
+    series = _forecast_cache.get(cache_key)
+    if series is None:
+        try:
+            from services.birth_chart_service import (
+                calculate_birth_chart,
+                calculate_current_transits,
+                calculate_transit_aspects_to_natal,
+                score_transit_aspects,
+                band_for_score,
+            )
+            natal = calculate_birth_chart(
+                birth_date=birth_date, birth_time=birth_time,
+                birth_place=birth_place, sidereal=sidereal,
+            )
+            series = []
+            for i in range(_FORECAST_MAX_DAYS):
+                d = today + timedelta(days=i)
+                when = _dt(d.year, d.month, d.day, 12, 0, tzinfo=_tz.utc)
+                transits = calculate_current_transits(sidereal=sidereal, when=when)
+                aspects = calculate_transit_aspects_to_natal(natal["planets"], transits)
+                score = score_transit_aspects(aspects)
+                if score is None:
+                    continue
+                series.append({
+                    "date": d.isoformat(),
+                    "score": score,
+                    "band": band_for_score(score),
+                })
+        except Exception as exc:
+            logger.warning("get_forecast  failed (%s)  system=%s", exc, system)
+            return [], None
+        _forecast_cache[cache_key] = series
+        logger.info("get_forecast  computed  system=%s  points=%d", system, len(series))
+
+    points = series[:days]
+    best_day = max(points, key=lambda p: p["score"]) if points else None
+    return points, best_day
+
+
+def get_horoscope(zodiac_sign: str, system: str = "western", db=None,
+                  birth_date: str | None = None, birth_time: str | None = None,
+                  birth_place: str | None = None) -> dict:
     """
     Get today's horoscope for a zodiac sign.
 
@@ -44,9 +205,16 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
                     in-memory cache + AI, then the shared template. Vedic
                     readings are not persisted to the DB.
 
+    When `birth_date` is provided, a genuinely PERSONAL reading is attempted
+    first — grounded in the reader's real natal chart and today's transits to
+    it. It has its own in-memory cache and is never written to the shared
+    per-sign DB cache. If the AI is unavailable the code falls through to the
+    generic per-sign resolution below.
+
     Resolution order:
+    0. Personalized transit-to-natal reading (only when birth_date is given).
     1. In-memory process cache (same result for all requests today).
-    2. Today's cached row in the database (western only, if db provided).
+    2. Today's cached row in the database (if db provided).
     3. AI-generated content (if an AI provider is configured).
     4. Static template fallback.
     """
@@ -56,6 +224,20 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None) -> dict:
 
     system = system if system in ("western", "vedic") else "western"
     logger.debug("get_horoscope  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
+
+    # Personalized reading (real natal chart + today's transits) comes first so
+    # a chart-specific request never reads or writes the shared per-sign cache.
+    if birth_date:
+        personal = _get_personalized_horoscope(
+            zodiac_sign, system, today, today_str,
+            birth_date, birth_time, birth_place,
+        )
+        if personal is not None:
+            return personal
+        logger.info(
+            "get_horoscope  personalization unavailable — using generic  sign=%s  system=%s",
+            zodiac_sign, system,
+        )
 
     # ── 1. In-memory cache ───────────────────────────────────────────────────
     cache_key = (zodiac_sign, system, today_str)

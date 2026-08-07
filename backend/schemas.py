@@ -59,6 +59,24 @@ class HoroscopeResponse(CamelModel):
     lucky_number: str
     lucky_color: str
     mood: str
+    # True when grounded in the reader's real natal chart + today's transits.
+    personalized: bool = False
+    # Deterministic day label + one-line "why" — present only for personalized readings.
+    band: Optional[str] = None
+    mood_summary: Optional[str] = None
+
+
+# --- Forecast Schemas ---
+
+class ForecastPoint(CamelModel):
+    date: str
+    score: int
+    band: str
+
+
+class ForecastResponse(CamelModel):
+    forecast: list[ForecastPoint]
+    best_day: Optional[ForecastPoint] = None
 
 
 # --- Tarot Schemas ---

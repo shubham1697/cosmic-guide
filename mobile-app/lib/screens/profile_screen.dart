@@ -624,6 +624,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               birthDate: _birthDate.isNotEmpty ? _birthDate : null,
               birthTime: _birthTime.isNotEmpty ? _birthTime : null,
               birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
+              tradition: _tradition,
             ),
           ),
         ),
@@ -1017,9 +1018,11 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               onTap: _pickTime,
             ),
             const SizedBox(height: 6),
-            const Text(
-              'Used for accurate Moon & Rising sign calculation.',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11),
+            Text(
+              _tradition == 'vedic'
+                  ? 'Used for accurate Moon & Lagna sign calculation.'
+                  : 'Used for accurate Moon & Rising sign calculation.',
+              style: const TextStyle(color: AppColors.textMuted, fontSize: 11),
             ),
             const SizedBox(height: 20),
             _label('Birth Place'),

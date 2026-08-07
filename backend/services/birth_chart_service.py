@@ -408,14 +408,24 @@ def _calculate_aspects(planets: list[dict]) -> list[dict]:
 
 # ── Current transits ─────────────────────────────────────────────────────────
 
-def calculate_current_transits() -> list[dict]:
-    """Calculate current planetary positions (transits for today)."""
-    now = datetime.now(timezone.utc)
+def calculate_current_transits(sidereal: bool = False, when: Optional[datetime] = None) -> list[dict]:
+    """Calculate planetary positions for ``when`` (defaults to now) — i.e. the
+    transits for a given day.
+
+    When ``sidereal`` is True the positions use the Lahiri ayanamsa so the
+    reported signs match a Vedic (Jyotish) reading; otherwise they are tropical.
+    """
+    now = when or datetime.now(timezone.utc)
     jd = _to_julian_day(now)
+
+    calc_flags = swe.FLG_SWIEPH | swe.FLG_SPEED
+    if sidereal:
+        swe.set_sid_mode(swe.SIDM_LAHIRI, 0, 0)
+        calc_flags |= swe.FLG_SIDEREAL
 
     transits = []
     for name, planet_id in PLANET_IDS.items():
-        result, _flags = swe.calc_ut(jd, planet_id, swe.FLG_SWIEPH | swe.FLG_SPEED)
+        result, _flags = swe.calc_ut(jd, planet_id, calc_flags)
         longitude = result[0]
         speed = result[3]
 
@@ -433,3 +443,174 @@ def calculate_current_transits() -> list[dict]:
         })
 
     return transits
+
+
+def calculate_transit_aspects_to_natal(
+    natal_planets: list[dict], transit_planets: list[dict]
+) -> list[dict]:
+    """Aspects today's transiting planets make to the natal planets.
+
+    This is the transit-to-natal synthesis a real astrologer reads (e.g. a
+    transiting Saturn square the natal Sun). It reuses the same major aspects
+    and orbs as natal aspects. The angular separation is ayanamsa-invariant, so
+    the result is valid as long as both sets share the same zodiac (both
+    tropical or both sidereal). Returned tightest-orb first.
+    """
+    aspects: list[dict] = []
+    for t in transit_planets:
+        for n in natal_planets:
+            diff = abs(t["longitude"] - n["longitude"]) % 360
+            if diff > 180:
+                diff = 360 - diff
+            for aspect_name, (exact_angle, orb) in ASPECT_TYPES.items():
+                delta = abs(diff - exact_angle)
+                if delta <= orb:
+                    aspects.append({
+                        "transit_planet": t["name"],
+                        "natal_planet": n["name"],
+                        "aspect": aspect_name,
+                        "orb": round(delta, 2),
+                        "transit_sign": t["sign"],
+                        "natal_sign": n["sign"],
+                        "is_retrograde": t.get("is_retrograde", False),
+                    })
+                    break
+    aspects.sort(key=lambda a: a["orb"])
+    return aspects
+
+
+# ── Day-favorability score ─────────────────────────────────────────────
+
+# How each major aspect colours the day. Conjunctions are neutral here and
+# resolved by the transiting planet's nature below.
+_ASPECT_POINTS = {
+    "Trine": 7.0,
+    "Sextile": 5.0,
+    "Square": -7.0,
+    "Opposition": -6.0,
+}
+_CONJUNCTION_POINTS = {"benefic": 6.0, "malefic": -3.0, "neutral": 2.0}
+_BENEFICS = {"Jupiter", "Venus"}
+_MALEFICS = {"Saturn", "Mars"}
+# Prominence of a body: luminaries and the slow karmic planets move the needle
+# more than the personal/outer planets. Used for both ends of an aspect.
+_PLANET_WEIGHT = {
+    "Sun": 1.3, "Moon": 1.3,
+    "Jupiter": 1.1, "Saturn": 1.1,
+    "Mercury": 1.0, "Venus": 1.0, "Mars": 1.0,
+}
+_DEFAULT_WEIGHT = 0.85  # Uranus, Neptune, Pluto, Rahu, Ketu, etc.
+
+
+def _aspect_contribution(a: dict) -> float:
+    """Signed weight one transit-to-natal aspect adds to the day score."""
+    aspect = a.get("aspect")
+    if aspect == "Conjunction":
+        planet = a.get("transit_planet")
+        nature = "benefic" if planet in _BENEFICS else "malefic" if planet in _MALEFICS else "neutral"
+        base = _CONJUNCTION_POINTS[nature]
+    else:
+        base = _ASPECT_POINTS.get(aspect)
+        if base is None:
+            return 0.0
+
+    tightness = max(0.0, 1.0 - a.get("orb", 0.0) / 8.0)
+    weight = (
+        _PLANET_WEIGHT.get(a.get("transit_planet"), _DEFAULT_WEIGHT)
+        + _PLANET_WEIGHT.get(a.get("natal_planet"), _DEFAULT_WEIGHT)
+    ) / 2.0
+    contribution = base * weight * (0.4 + 0.6 * tightness)
+    if a.get("is_retrograde") and contribution < 0:
+        contribution *= 1.1  # a retrograde transit intensifies a hard contact
+    return contribution
+
+
+def _score_from_net(net: float) -> int:
+    """Squash the summed contributions into a bounded percentage."""
+    return max(45, min(97, round(72 + 22 * math.tanh(net / 16.0))))
+
+
+def score_transit_aspects(transit_aspects: list[dict]) -> Optional[int]:
+    """Derive a deterministic day-favorability score (a percentage) from the
+    transit-to-natal aspects instead of leaving it to an LLM guess.
+
+    Harmonious aspects (trine, sextile, benefic conjunction) raise the score;
+    hard aspects (square, opposition, malefic conjunction) lower it — each
+    weighted by how tight the orb is and how prominent the two bodies are. The
+    running total is squashed through ``tanh`` so the score varies meaningfully
+    around a neutral baseline without ever reaching alarming extremes. Returns
+    None when there is nothing to score so the caller can fall back.
+    """
+    if not transit_aspects:
+        return None
+    return _score_from_net(sum(_aspect_contribution(a) for a in transit_aspects))
+
+
+# Qualitative bands for the score (which is clamped to 45–97).
+_SCORE_BANDS = ((85, "Excellent"), (72, "Favorable"), (62, "Steady"), (52, "Mixed"), (0, "Challenging"))
+
+
+def band_for_score(score: int) -> str:
+    """Map a numeric day score to a human label."""
+    for threshold, label in _SCORE_BANDS:
+        if score >= threshold:
+            return label
+    return "Challenging"
+
+
+# How each aspect reads as a short phrase in the day summary.
+_ASPECT_PHRASE = {
+    "Trine": "trine to",
+    "Sextile": "sextile to",
+    "Conjunction": "conjunction with",
+    "Square": "square to",
+    "Opposition": "opposition to",
+}
+
+
+def _aspect_phrase(a: dict) -> str:
+    """A readable phrase for one aspect, e.g. "Venus's trine to your Moon"."""
+    verb = _ASPECT_PHRASE.get(a.get("aspect"), "aspect to")
+    retro = " retrograde" if a.get("is_retrograde") else ""
+    return f"{a['transit_planet']}'s{retro} {verb} your {a['natal_planet']}"
+
+
+def _cap(text: str) -> str:
+    return text[0].upper() + text[1:] if text else text
+
+
+def _compose_summary(supports: list[str], challenges: list[str]) -> str:
+    """One-line, plain-language "why" for the day from its top drivers."""
+    if supports and challenges:
+        return f"{_cap(supports[0])} lifts the day, while {challenges[0]} asks for patience."
+    if supports:
+        extra = f" and {supports[1]}" if len(supports) > 1 else ""
+        return f"{_cap(supports[0])}{extra} keeps the day flowing."
+    if challenges:
+        extra = f" and {challenges[1]}" if len(challenges) > 1 else ""
+        return f"{_cap(challenges[0])}{extra} brings some friction — pace yourself."
+    return "A calm day with no strong transits to your chart."
+
+
+def describe_day(transit_aspects: list[dict]) -> Optional[dict]:
+    """Full day read: the score, its band label, a one-line "why", and the top
+    supportive/challenging transit phrases. Returns None with nothing to score.
+    """
+    if not transit_aspects:
+        return None
+
+    scored = [(a, _aspect_contribution(a)) for a in transit_aspects]
+    scored = [(a, c) for a, c in scored if c != 0.0]
+    if not scored:
+        return None
+
+    score = _score_from_net(sum(c for _, c in scored))
+    supports = [_aspect_phrase(a) for a, c in sorted(scored, key=lambda x: x[1], reverse=True) if c > 0][:2]
+    challenges = [_aspect_phrase(a) for a, c in sorted(scored, key=lambda x: x[1]) if c < 0][:2]
+    return {
+        "score": score,
+        "band": band_for_score(score),
+        "summary": _compose_summary(supports, challenges),
+        "supports": supports,
+        "challenges": challenges,
+    }

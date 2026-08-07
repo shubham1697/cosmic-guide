@@ -18,12 +18,16 @@ class ShareCardScreen extends StatefulWidget {
   final String? birthTime;
   final String? birthPlace;
 
+  /// Reading tradition; when 'vedic' the ascendant is labelled "Lagna".
+  final String? tradition;
+
   const ShareCardScreen({
     super.key,
     required this.sunSign,
     this.birthDate,
     this.birthTime,
     this.birthPlace,
+    this.tradition,
   });
 
   @override
@@ -38,6 +42,8 @@ class _ShareCardScreenState extends State<ShareCardScreen> {
   bool _isEstimated = true;
   bool _loading = true;
   bool _sharing = false;
+
+  bool get _isVedic => widget.tradition == 'vedic';
 
   @override
   void initState() {
@@ -102,8 +108,9 @@ class _ShareCardScreenState extends State<ShareCardScreen> {
   }
 
   String _shareText() {
+    final rising = _isVedic ? 'Lagna' : 'Rising';
     return '✨ My Cosmic Blueprint ✨\n'
-        'Sun in ${widget.sunSign} · Moon in $_moonSign · Rising in $_risingSign\n'
+        'Sun in ${widget.sunSign} · Moon in $_moonSign · $rising in $_risingSign\n'
         'Discover yours on CosmicGuide 🔮';
   }
 
@@ -135,6 +142,7 @@ class _ShareCardScreenState extends State<ShareCardScreen> {
                               moonSign: _moonSign,
                               risingSign: _risingSign,
                               isEstimated: _isEstimated,
+                              isVedic: _isVedic,
                             ),
                           ),
                         ),

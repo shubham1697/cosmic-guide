@@ -24,6 +24,8 @@ from services.ai_prompts import (
     SYSTEM_PROMPT,
     horoscope_prompt,
     vedic_horoscope_prompt,
+    personalized_horoscope_prompt,
+    vedic_personalized_horoscope_prompt,
     period_horoscope_prompt,
     vedic_period_horoscope_prompt,
     batch_horoscope_prompt,
@@ -350,23 +352,36 @@ def _parse_json_array(raw: Optional[str]) -> Optional[list]:
 
 def generate_daily_horoscope(zodiac_sign: str,
                               for_date: date = None,
-                              system: str = "western") -> Optional[dict]:
+                              system: str = "western",
+                              astro_context: Optional[dict] = None) -> Optional[dict]:
     """
     Generate an AI horoscope for one zodiac sign on the given date.
 
     `system` is "western" (tropical Sun sign) or "vedic" (sidereal reading
-    framed on the Moon rashi / Janma Rashi). Returns a dict matching the
-    Horoscope DB model fields, or None on failure.
+    framed on the Moon rashi / Janma Rashi). When `astro_context` is supplied
+    (the reader's real natal chart + today's transits to it), the reading is a
+    genuine, personal transit-to-natal one instead of a generic sign reading.
+    Returns a dict matching the Horoscope DB model fields, or None on failure.
     """
     if for_date is None:
         for_date = date.today()
 
-    logger.debug("generate_daily_horoscope  sign=%s  system=%s  date=%s", zodiac_sign, system, for_date)
+    personal = astro_context is not None
+    logger.debug(
+        "generate_daily_horoscope  sign=%s  system=%s  date=%s  personal=%s",
+        zodiac_sign, system, for_date, personal,
+    )
     if system == "vedic":
-        prompt = vedic_horoscope_prompt(zodiac_sign, for_date)
+        prompt = (
+            vedic_personalized_horoscope_prompt(zodiac_sign, for_date, astro_context)
+            if personal else vedic_horoscope_prompt(zodiac_sign, for_date)
+        )
     else:
-        prompt = horoscope_prompt(zodiac_sign, for_date)
-    raw = _call_ai(prompt, expect_json=True, max_tokens=800)
+        prompt = (
+            personalized_horoscope_prompt(zodiac_sign, for_date, astro_context)
+            if personal else horoscope_prompt(zodiac_sign, for_date)
+        )
+    raw = _call_ai(prompt, expect_json=True, max_tokens=900 if personal else 800)
     data = _parse_json(raw)
 
     if not data:

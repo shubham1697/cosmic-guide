@@ -82,15 +82,36 @@ class ApiService {
     String sign, {
     String system = 'western',
     String period = 'daily',
+    String? birthDate,
+    String? birthTime,
+    String? birthPlace,
   }) {
     final path = period == 'weekly'
         ? 'weekly'
         : period == 'monthly'
         ? 'monthly'
         : 'today';
-    final url = '$_baseUrl/horoscope/$path?zodiac_sign=$sign&system=$system';
-    // Weekly/monthly may be generated on-demand by a local LLM — allow longer.
-    final timeout = period == 'daily' ? _timeout : const Duration(seconds: 35);
+    // Birth details personalize the DAILY reading (real natal chart + today's
+    // transits to it). Weekly/monthly stay generic per-sign.
+    final personal = period == 'daily' && (birthDate?.isNotEmpty ?? false);
+    final buf = StringBuffer(
+      '$_baseUrl/horoscope/$path?zodiac_sign=$sign&system=$system',
+    );
+    if (personal) {
+      buf.write('&birthDate=${Uri.encodeQueryComponent(birthDate!)}');
+      if (birthTime?.isNotEmpty ?? false) {
+        buf.write('&birthTime=${Uri.encodeQueryComponent(birthTime!)}');
+      }
+      if (birthPlace?.isNotEmpty ?? false) {
+        buf.write('&birthPlace=${Uri.encodeQueryComponent(birthPlace!)}');
+      }
+    }
+    final url = buf.toString();
+    // Weekly/monthly, and personalized daily, may be generated on-demand by a
+    // local LLM — allow longer.
+    final timeout = (period == 'daily' && !personal)
+        ? _timeout
+        : const Duration(seconds: 35);
     return _dedup<HoroscopeData>(url, () async {
       try {
         final response = await http.get(Uri.parse(url)).timeout(timeout);
@@ -107,7 +128,56 @@ class ApiService {
             luckyNumber: data['luckyNumber'],
             luckyColor: data['luckyColor'],
             mood: data['mood'],
+            personalized: data['personalized'] == true,
+            band: data['band'] as String?,
+            moodSummary: data['moodSummary'] as String?,
           );
+        }
+      } catch (_) {}
+      return null;
+    });
+  }
+
+  /// Fetch the personalized [days]-day energy forecast: a deterministic score
+  /// and band per day, computed from that day's transit-to-natal aspects.
+  /// Requires a birth date; returns null on failure.
+  static Future<({List<ForecastPoint> points, ForecastPoint? bestDay})?>
+  getForecast({
+    required String birthDate,
+    String? birthTime,
+    String? birthPlace,
+    String system = 'western',
+    int days = 30,
+  }) {
+    if (birthDate.isEmpty) return Future.value(null);
+    final buf = StringBuffer(
+      '$_baseUrl/horoscope/forecast'
+      '?birthDate=${Uri.encodeQueryComponent(birthDate)}'
+      '&system=$system&days=$days',
+    );
+    if (birthTime?.isNotEmpty ?? false) {
+      buf.write('&birthTime=${Uri.encodeQueryComponent(birthTime!)}');
+    }
+    if (birthPlace?.isNotEmpty ?? false) {
+      buf.write('&birthPlace=${Uri.encodeQueryComponent(birthPlace!)}');
+    }
+    final url = buf.toString();
+    return _dedup<({List<ForecastPoint> points, ForecastPoint? bestDay})>(url, () async {
+      try {
+        final response = await http
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 30));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body) as Map<String, dynamic>;
+          final points = (data['forecast'] as List<dynamic>? ?? const [])
+              .map((e) => ForecastPoint.fromJson(e as Map<String, dynamic>))
+              .toList();
+          if (points.isEmpty) return null;
+          final bd = data['bestDay'];
+          final bestDay = bd is Map<String, dynamic>
+              ? ForecastPoint.fromJson(bd)
+              : null;
+          return (points: points, bestDay: bestDay);
         }
       } catch (_) {}
       return null;

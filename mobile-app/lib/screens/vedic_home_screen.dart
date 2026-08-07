@@ -145,10 +145,10 @@ class _VedicHomeScreenState extends State<VedicHomeScreen> {
       case 'Dasha':
         return summary.dasha == null
             ? 'Dasha requires birth details because the periods are derived from your Moon position at birth.'
-            : 'Your current Vimshottari period summary based on your birth chart.';
+            : 'Your current Vimshottari period summary based on your Kundli.';
       case 'Doshas':
         return summary.dosha == null
-            ? 'Dosha detection requires birth chart calculations.'
+            ? 'Dosha detection requires Kundli calculations.'
             : 'This preview shows the major dosha signals currently detected from your chart.';
       case 'Remedies':
         return summary.remedy == null

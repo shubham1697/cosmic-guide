@@ -48,6 +48,18 @@ class HoroscopeData {
   final String luckyColor;
   final String mood;
 
+  /// True when the reading was grounded in the user's real natal chart and
+  /// today's transits (not a generic per-sign column).
+  final bool personalized;
+
+  /// Deterministic score band label ("Excellent", "Favorable", "Steady",
+  /// "Mixed", "Challenging") for personalized readings. Null otherwise.
+  final String? band;
+
+  /// One-line plain-language "why" behind today's score — which transits lift
+  /// or challenge the day. Null for generic per-sign readings.
+  final String? moodSummary;
+
   const HoroscopeData({
     required this.sign,
     required this.date,
@@ -59,7 +71,33 @@ class HoroscopeData {
     required this.luckyNumber,
     required this.luckyColor,
     required this.mood,
+    this.personalized = false,
+    this.band,
+    this.moodSummary,
   });
+}
+
+/// A single day in the personalized energy forecast: a deterministic score
+/// (0–100) and its band label, derived from that day's transit-to-natal
+/// aspects.
+class ForecastPoint {
+  final DateTime date;
+  final int score;
+  final String band;
+
+  const ForecastPoint({
+    required this.date,
+    required this.score,
+    required this.band,
+  });
+
+  factory ForecastPoint.fromJson(Map<String, dynamic> json) {
+    return ForecastPoint(
+      date: DateTime.parse(json['date'] as String),
+      score: (json['score'] as num).toInt(),
+      band: json['band'] as String? ?? '',
+    );
+  }
 }
 
 class CompatibilityResult {

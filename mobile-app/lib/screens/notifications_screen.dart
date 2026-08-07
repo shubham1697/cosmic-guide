@@ -21,6 +21,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   bool _busy = false;
   bool _enabled = false;
   bool _pushAvailable = false;
+  TimeOfDay _reminderTime = const TimeOfDay(hour: 8, minute: 0);
 
   String _sign = 'Aries';
   String _tradition = 'both';
@@ -38,6 +39,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     final prefs = await SharedPreferences.getInstance();
     final enabled = await NotificationService.isEnabled();
     final available = await NotificationService.isPushAvailable();
+    final time = await NotificationService.getReminderTime();
     if (!mounted) return;
     setState(() {
       _sign = prefs.getString('userSign') ?? 'Aries';
@@ -47,6 +49,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _birthPlace = prefs.getString('birthPlace') ?? '';
       _enabled = enabled;
       _pushAvailable = available;
+      _reminderTime = TimeOfDay(hour: time.$1, minute: time.$2);
       _loading = false;
     });
   }
@@ -56,7 +59,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       _enabled = value;
       _busy = true;
     });
-    final synced = await NotificationService.setEnabled(
+    final ok = await NotificationService.setEnabled(
       enabled: value,
       zodiacSign: _sign,
       tradition: _tradition,
@@ -64,20 +67,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       birthTime: _birthTime,
       birthPlace: _birthPlace,
     );
+    final available = await NotificationService.isPushAvailable();
     if (!mounted) return;
-    setState(() => _busy = false);
+    setState(() {
+      _busy = false;
+      _pushAvailable = available;
+    });
     final messenger = ScaffoldMessenger.of(context);
-    if (value && !synced) {
+    if (value && !ok) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Saved. Reminders will start once push is set up.'),
+          content: Text(
+            'Enable notifications in Settings to receive your reminder.',
+          ),
         ),
       );
     } else {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            value ? 'Daily reminder turned on.' : 'Daily reminder turned off.',
+            value
+                ? 'Daily reminder set for ${_formatTime(_reminderTime)}.'
+                : 'Daily reminder turned off.',
           ),
         ),
       );
@@ -94,11 +105,38 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         content: Text(
           sent
               ? 'Test notification sent.'
-              : 'Push not configured yet — set up Firebase to send.',
+              : 'Enable notifications in Settings to see it.',
         ),
       ),
     );
   }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _reminderTime,
+      helpText: 'Daily reminder time',
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _reminderTime = picked);
+    await NotificationService.setReminderTime(
+      hour: picked.hour,
+      minute: picked.minute,
+      zodiacSign: _sign,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _enabled
+              ? 'Reminder time updated to ${_formatTime(picked)}.'
+              : 'Reminder time set to ${_formatTime(picked)}.',
+        ),
+      ),
+    );
+  }
+
+  String _formatTime(TimeOfDay t) => t.format(context);
 
   @override
   Widget build(BuildContext context) {
@@ -148,10 +186,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           Expanded(
             child: Text(
               active
-                  ? 'Push notifications are active on this device.'
-                  : 'Push isn\'t set up on this device yet. Your preferences are '
-                        'saved and will apply automatically once notifications '
-                        'are enabled for the app.',
+                  ? 'Notifications are on for this device. Your daily reminder '
+                        'will arrive at the time you choose below.'
+                  : 'Notifications are turned off for CosmicGuide. Enable them '
+                        'in your device Settings to receive your daily reminder.',
               style: const TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -170,26 +208,68 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: SwitchListTile(
-        value: _enabled,
-        onChanged: _busy ? null : _toggle,
-        activeThumbColor: AppColors.accent,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        title: Text(
-          'Daily horoscope reminder',
-          style: GoogleFonts.poppins(
-            color: AppColors.textPrimary,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
+      child: Column(
+        children: [
+          SwitchListTile(
+            value: _enabled,
+            onChanged: _busy ? null : _toggle,
+            activeThumbColor: AppColors.accent,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            title: Text(
+              'Daily horoscope reminder',
+              style: GoogleFonts.poppins(
+                color: AppColors.textPrimary,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            subtitle: const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'A gentle nudge with your reading each day.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+              ),
+            ),
           ),
-        ),
-        subtitle: const Padding(
-          padding: EdgeInsets.only(top: 4),
-          child: Text(
-            'A gentle nudge with your reading at 8:00 AM.',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 12.5),
+          Divider(
+            height: 1,
+            thickness: 1,
+            indent: 16,
+            endIndent: 16,
+            color: AppColors.textMuted.withAlpha(38),
           ),
-        ),
+          ListTile(
+            enabled: _enabled && !_busy,
+            onTap: (_enabled && !_busy) ? _pickTime : null,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 4,
+            ),
+            leading: Icon(
+              Icons.schedule,
+              color: _enabled ? AppColors.accent : AppColors.textMuted,
+            ),
+            title: Text(
+              'Reminder time',
+              style: GoogleFonts.poppins(
+                color: _enabled ? AppColors.textPrimary : AppColors.textMuted,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            trailing: Text(
+              _formatTime(_reminderTime),
+              style: GoogleFonts.poppins(
+                color: _enabled ? AppColors.accent : AppColors.textMuted,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

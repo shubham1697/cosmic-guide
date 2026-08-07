@@ -1,6 +1,6 @@
 # CosmicGuide - Detailed Feature Tracker
 
-> Last updated: July 24, 2026
+> Last updated: August 4, 2026
 
 ## 🐛 Bugs / Investigations
 
@@ -38,7 +38,7 @@
 
 ### 💡 New Feature Ideas (from competitor analysis, adjusted for what already exists)
 
-- **Push notifications (FCM)** — the #1 retention driver; still not started.
+- **Push notifications (FCM)** — ✅ DONE (Aug 4). Backend: `/api/v1/notifications` register/unregister/preferences/test/run-daily (`backend/api/notifications.py`), `notification_service` via firebase-admin (safe no-op without creds), `device_tokens` table, in-process APScheduler 8 AM daily-reminder job. Flutter: `NotificationService` (FCM token lifecycle — registers on launch + `onTokenRefresh`, local reminder pref), `ApiService` device endpoints, Notifications settings screen (Profile → Notifications), Firebase initialized in `main.dart` (project `cosmicguide-ff556`). To go live: drop a service-account key at `backend/secrets/fcm.json` + restart, and add the iOS APNs key. `flutter analyze` clean.
 - **Real streak & reading history** — ✅ DONE. `HistoryService` (SharedPreferences) records tarot/fortune/horoscope draws; Profile stats (Readings/Streak/Fortune) are now real, and a new Reading History screen (Profile → Reading History) shows a filterable, day-grouped timeline.
 - **Shareable chart card** — ✅ DONE. `ShareService.shareBoundary` captures a `RepaintBoundary` → PNG → native share sheet (share_plus). New `ShareableChartCard` widget renders a branded "Cosmic Blueprint" (Big 3: Sun/Moon/Rising) and `ShareCardScreen` resolves the Big 3 (real via `getBirthChart`, else estimated). Entry points: Chart header share icon + Profile → "Share Cosmic Card".
 - **Ask the Oracle** — free-text question → AI answer with astrological framing.
@@ -52,7 +52,7 @@
 > Vedic users now get a Moon-rashi (Janma Rashi) daily reading via `system=vedic` once birth
 > time + place are known; otherwise the app nudges them and falls back to a Western reading.
 > **Order:** R1 + R4 (quick wins) → R2 + R3 (keystone) → R5 (polish).
-> **Progress:** R1 ✅ · R2 ✅ (backend) · R3 ✅ · R4 ✅ (nav-level) · R5 🚧 (glossary + North/South + "both" compare done; Jyotish terminology relabels remain).
+> **Progress:** R1 ✅ · R2 ✅ (backend) · R3 ✅ · R4 ✅ (nav-level) · R5 ✅ (glossary + North/South + "both" compare + Jyotish terminology relabels done).
 >
 > **Decision (settled):** adaptive single-tradition per user, with a **"Both" default** — navigation
 > and the daily-reading emphasis adapt to the chosen tradition.
@@ -71,8 +71,8 @@
 
 - [x] **Sidereal reading path** — `/today` now takes `?system=western|vedic` (default western). Vedic uses new `vedic_horoscope_prompt(moon_rashi, date)` (Jyotishi framing on the Janma/Moon rashi, Sanskrit name + rashi lord via `RASHI_INFO`), same JSON shape → schema & mobile unchanged
 - [x] **Cache key update** — in-memory cache key is now `(sign, system, date)`
-- [x] **System threaded end-to-end** — `today_horoscope` → `get_horoscope(sign, system, db)` → `generate_daily_horoscope(sign, date, system)`. Western stays fully DB-backed; **Vedic uses memory + AI + template only (no DB persistence)** to avoid a `horoscopes` schema migration (no `system` column; `create_all` won't alter existing tables)
-- [ ] _Deferred:_ nakshatra-level detail + Vedic DB persistence (needs `system` column + migration)
+- [x] **System threaded end-to-end** — `today_horoscope` → `get_horoscope(sign, system, db)` → `generate_daily_horoscope(sign, date, system)`. Western AND Vedic are now DB-backed (see the `system` column work, Aug 4); originally Vedic was memory + AI + template only
+- [x] _Vedic DB persistence:_ DONE (Aug 4) — `system VARCHAR(10)` column on `horoscopes` + idempotent `shared/db_migrations.py` migration; `horoscope_service` reads/writes western AND vedic. _Deferred:_ nakshatra-level detail
 - [x] _R3 scope:_ resolve WHICH rashi is the user's Moon sign (client-side, via existing sidereal `/chart/vedic`) and pass it as `zodiac_sign` with `system=vedic` — **done in R3**
 
 ### R3. Sign-identity resolver — consistency — ✅ DONE
@@ -89,13 +89,13 @@
 **Files:** `lib/main.dart`
 
 - [x] **Conditional tabs** — tab set built in `_MainShellState` from `tradition` (`both`→all 5; `western`→Home/Chart/Match/Profile; `vedic`→Home/Kundli/Match/Profile); selected tab is preserved when the set changes
-- [~] **Per-tradition labels** — nav-level done (Vedic tab reads "Kundli" for Vedic users); in-screen Rising↔Lagna / Birth Chart↔Kundli deferred to R5 Jyotish terminology
+- [x] **Per-tradition labels** — nav-level done (Vedic tab reads "Kundli" for Vedic users); in-screen Rising↔Lagna / Birth Chart↔Kundli relabels landed in R5 Jyotish terminology
 
-### R5. Authenticity polish — 🚧 in progress
+### R5. Authenticity polish — ✅ done
 
 **Files:** `lib/screens/astro_glossary_screen.dart` (new), `lib/screens/vedic_home_screen.dart`, `lib/screens/kundli_chart_screen.dart`, `lib/screens/match_screen.dart`
 
-- [ ] **Jyotish terminology** in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — _kundli chart already uses Lagna/Nakshatra; audit + fold in R4-deferred Rising↔Lagna / Birth Chart↔Kundli relabels_
+- [x] **Jyotish terminology** in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — kundli chart already uses Lagna/Nakshatra; Rising↔Lagna and Birth Chart↔Kundli now relabel on the Western surfaces a Vedic user still reaches: Share Cosmic Card (`shareable_chart_card.dart`/`share_card_screen.dart` — Rising→Lagna when `tradition=='vedic'`), Profile edit birth-time helper (`profile_screen.dart`), and the Vedic hub Dasha/Dosha copy (`vedic_home_screen.dart` — "birth chart"→"Kundli"). `flutter analyze` clean
 - [x] **Glossary / "why signs differ"** explainer screen — new `AstroGlossaryScreen` (tropical vs. sidereal + ~24° Lahiri ayanamsa, plus Jyotish & Western term cards). Reachable via **Profile → Astrology Guide**. `flutter analyze` clean
 - [x] **Vedic wheel defaults to North/South** — already satisfied: `kundli_chart_screen.dart` defaults to `_KundliChartStyle.north` and uses Lagna/Nakshatra terminology (verified in R5)
 - [x] **"Both" compare view** — DONE (Jul 27). For `tradition == 'both'` users with birth details, Home now fetches the Vedic Moon-rashi reading alongside the Western Sun reading and shows a segmented Western/Vedic toggle (each segment displays its sign + today's score at a glance, Match-tab aesthetic). Tapping swaps the daily card + its tap-through to `HoroscopeScreen`; a subtle nudge prompts "both" users missing birth time/place to add them. Files: `lib/screens/home_screen.dart` (`_buildTraditionCompare`/`_buildCompareSegment`/`_buildBothVedicHint`, `_loadVedicReading`), `lib/main.dart` (passes `tradition` + birth details to Home). `flutter analyze` clean

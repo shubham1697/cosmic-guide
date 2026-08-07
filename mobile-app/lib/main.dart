@@ -6,6 +6,8 @@ import 'theme/app_theme.dart';
 import 'models/zodiac.dart';
 import 'services/api_service.dart';
 import 'services/sign_resolver.dart';
+import 'services/notification_service.dart';
+import 'services/local_notification_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/chart_screen.dart';
 import 'screens/vedic_home_screen.dart';
@@ -16,6 +18,8 @@ import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Local notifications drive the daily reminder and work without Firebase.
+  await LocalNotificationService.init();
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -24,6 +28,7 @@ void main() async {
     // Non-fatal: platforms without Firebase config (e.g. desktop) still run.
     debugPrint('Firebase init skipped: $e');
   }
+  await NotificationService.init();
   runApp(const CosmicGuideApp());
 }
 
@@ -212,6 +217,9 @@ class _MainShellState extends State<MainShell> {
     final data = await ApiService.getHoroscope(
       identity.readingSign,
       system: identity.system,
+      birthDate: _birthDate.isNotEmpty ? _birthDate : null,
+      birthTime: _birthTime.isNotEmpty ? _birthTime : null,
+      birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
     );
     if (mounted) {
       setState(() {

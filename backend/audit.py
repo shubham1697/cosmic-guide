@@ -106,8 +106,11 @@ def redact_headers(headers: dict) -> dict:
 
 
 def _emit(record: dict) -> None:
-    record["ts"] = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    _get_audit_logger().info(json.dumps(record, default=str, ensure_ascii=False))
+    # ``ts`` is inserted first so every audit line begins with the timestamp.
+    ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    _get_audit_logger().info(
+        json.dumps({"ts": ts, **record}, default=str, ensure_ascii=False)
+    )
 
 
 def audit_inbound(

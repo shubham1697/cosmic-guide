@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/history_service.dart';
 import '../services/sign_resolver.dart';
 import '../widgets/starry_background.dart';
+import '../widgets/energy_forecast_chart.dart';
 import 'fortune_screen.dart';
 import 'horoscope_screen.dart';
 import 'tarot_screen.dart';
@@ -81,6 +82,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // Which reading the compare toggle currently shows: 'western' | 'vedic'.
   String _selectedSystem = 'western';
 
+  /// 7-day forecast points per system ('western'/'vedic') for the daily-card
+  /// sparkline. Empty list = fetched but unavailable; missing key = not fetched.
+  final Map<String, List<ForecastPoint>> _forecastBySystem = {};
+
   @override
   void initState() {
     super.initState();
@@ -106,6 +111,7 @@ class _HomeScreenState extends State<HomeScreen> {
         widget.birthDate != oldWidget.birthDate ||
         widget.birthTime != oldWidget.birthTime ||
         widget.birthPlace != oldWidget.birthPlace) {
+      _forecastBySystem.clear();
       _loadData();
     }
   }
@@ -196,7 +202,13 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _loadingVedic = true);
     }
     final results = await Future.wait([
-      ApiService.getHoroscope(widget.readingSign, system: widget.system),
+      ApiService.getHoroscope(
+        widget.readingSign,
+        system: widget.system,
+        birthDate: widget.birthDate,
+        birthTime: widget.birthTime,
+        birthPlace: widget.birthPlace,
+      ),
       ApiService.getStories(),
     ]);
     if (mounted) {
@@ -226,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _selectedSystem = 'western';
       });
     }
+    if (mounted) _ensureForecast(_activeSystem);
   }
 
   /// Resolves the sidereal Moon sign and fetches its reading for the compare
@@ -243,6 +256,9 @@ class _HomeScreenState extends State<HomeScreen> {
       vedic = await ApiService.getHoroscope(
         identity.readingSign,
         system: 'vedic',
+        birthDate: widget.birthDate,
+        birthTime: widget.birthTime,
+        birthPlace: widget.birthPlace,
       );
     }
     if (!mounted) return;
@@ -451,7 +467,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   signName: widget.readingSign,
                   subLabel: 'Sun sign',
                   score: _horoscope?.overallScore,
-                  onTap: () => setState(() => _selectedSystem = 'western'),
+                  onTap: () {
+                    setState(() => _selectedSystem = 'western');
+                    _ensureForecast('western');
+                  },
                 ),
               ),
               const SizedBox(width: 4),
@@ -463,7 +482,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   signName: _vedicSign,
                   subLabel: 'Janma Rashi',
                   score: _vedicHoroscope?.overallScore,
-                  onTap: () => setState(() => _selectedSystem = 'vedic'),
+                  onTap: () {
+                    setState(() => _selectedSystem = 'vedic');
+                    _ensureForecast('vedic');
+                  },
                 ),
               ),
             ],
@@ -590,6 +612,9 @@ class _HomeScreenState extends State<HomeScreen> {
               userSign: _activeSign,
               system: _activeSystem,
               initialHoroscope: _activeHoroscope,
+              birthDate: widget.birthDate,
+              birthTime: widget.birthTime,
+              birthPlace: widget.birthPlace,
             ),
           ),
         );
@@ -684,6 +709,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(color: AppColors.textMuted, fontSize: 14),
               )
             else ...[
+              if (horoscope.band != null) _buildBandWhy(horoscope),
               _buildHoroscopePreview(horoscope.general),
               const SizedBox(height: 16),
               Row(
@@ -698,9 +724,101 @@ class _HomeScreenState extends State<HomeScreen> {
                   _buildInfoChip(Icons.mood, horoscope.mood),
                 ],
               ),
+              _buildSparkline(),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  /// Lazily fetch the 7-day forecast for [system] (once) so the daily card can
+  /// show a sparkline. Marks the slot in-flight to coalesce duplicate calls.
+  Future<void> _ensureForecast(String system) async {
+    final bd = widget.birthDate;
+    if (bd == null || bd.isEmpty) return;
+    if (_forecastBySystem.containsKey(system)) return;
+    _forecastBySystem[system] = const [];
+    final res = await ApiService.getForecast(
+      birthDate: bd,
+      birthTime: widget.birthTime,
+      birthPlace: widget.birthPlace,
+      system: system,
+      days: 7,
+    );
+    if (!mounted) return;
+    setState(() {
+      _forecastBySystem[system] = res?.points ?? const <ForecastPoint>[];
+    });
+  }
+
+  /// A coloured band chip ("Mixed · 54%") plus the one-line "why" for the
+  /// active personalized reading.
+  Widget _buildBandWhy(HoroscopeData h) {
+    final color = forecastScoreColor(h.overallScore);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withAlpha(38),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withAlpha(120)),
+          ),
+          child: Text(
+            '${h.band} \u00b7 ${h.overallScore}%',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (h.moodSummary != null && h.moodSummary!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            h.moodSummary!,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  /// The compact 7-day energy sparkline for the active reading, or nothing when
+  /// the forecast isn't available.
+  Widget _buildSparkline() {
+    final points = _forecastBySystem[_activeSystem];
+    if (points == null || points.length < 2) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.show_chart, size: 14, color: AppColors.textMuted),
+              const SizedBox(width: 6),
+              const Text(
+                'Next 7 days',
+                style: TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          EnergyForecastChart(points: points, compact: true),
+        ],
       ),
     );
   }
