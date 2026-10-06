@@ -2,17 +2,28 @@ import logging
 import time
 from datetime import date
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config import settings
 from logger import configure_logging, get_logger
+from security import require_admin
+from rate_limit import rate_limit_middleware
 from audit import audit_inbound, new_request_id, set_request_id
+from sqlalchemy.exc import IntegrityError
 from db.database import engine, Base, get_db
 from db import models  # noqa: F401 — register ORM models on Base.metadata before create_all
-from shared.db_migrations import ensure_horoscope_system_column
-from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic, notifications
+from shared.db_migrations import (
+    ensure_horoscope_system_column,
+    ensure_compatibility_canonical,
+    ensure_horoscope_lucky_number_string,
+    ensure_cache_unique_indexes,
+    ensure_users_firebase_shape,
+    ensure_device_token_owner_column,
+    ensure_tradition_is_binary,
+)
+from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic, notifications, users
 
 # Boot logging before anything else
 configure_logging()
@@ -20,6 +31,14 @@ logger = get_logger(__name__)
 
 logger.info("CosmicGuide API starting up — log_level=%s  ai_model=%s",
             settings.LOG_LEVEL, settings.AI_MODEL)
+if not settings.ADMIN_API_KEY:
+    logger.warning(
+        "ADMIN_API_KEY is not set — /admin/* and the notification broadcast "
+        "routes are DISABLED (503). Set ADMIN_API_KEY to enable them."
+    )
+
+# Runs before create_all so the replacement table is built in the same startup.
+ensure_users_firebase_shape(engine, logger)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -27,6 +46,11 @@ Base.metadata.create_all(bind=engine)
 # Patch pre-existing tables for columns added after they were first created
 # (create_all() only creates missing tables — it never alters existing ones).
 ensure_horoscope_system_column(engine, logger)
+ensure_compatibility_canonical(engine, logger)
+ensure_horoscope_lucky_number_string(engine, logger)
+ensure_cache_unique_indexes(engine, logger)
+ensure_device_token_owner_column(engine, logger)
+ensure_tradition_is_binary(engine, logger)
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -40,10 +64,24 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_credentials=True,
+    # Wildcard origins + credentials is spec-invalid and unsafe; the app uses no
+    # cookies/credentialed requests, so keep credentials off (set an explicit
+    # origin allow-list before enabling credentials for a future auth flow).
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Added before the logging middleware so logging stays outermost and still
+# records the requests this rejects.
+app.middleware("http")(rate_limit_middleware)
+if settings.RATE_LIMIT_ENABLED:
+    logger.info(
+        "Rate limiting on — %d/min default, %d/min for LLM routes, trust_proxy=%s",
+        settings.RATE_LIMIT_DEFAULT, settings.RATE_LIMIT_LLM, settings.TRUST_PROXY_HEADERS,
+    )
+else:
+    logger.warning("Rate limiting is DISABLED (RATE_LIMIT_ENABLED=false).")
 
 
 # ── Request / response logging middleware ─────────────────────────────────────
@@ -141,13 +179,23 @@ def health_check():
 
 
 # Content status endpoint — check what's pre-populated
-@app.get("/admin/content-status", tags=["Admin"])
-def content_status(target_date: str = None):
+def _parse_admin_date(target_date: str | None) -> date:
+    """Parse an optional ?target_date=YYYY-MM-DD; 400 (not 500) on malformed input."""
+    if not target_date:
+        return date.today()
+    try:
+        return date.fromisoformat(target_date)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="target_date must be a valid YYYY-MM-DD date")
+
+
+@app.get("/admin/content-status", tags=["Admin"], dependencies=[Depends(require_admin)])
+def content_status(target_date: str | None = None):
     """Check what content is available in the DB for the given date."""
     from db.database import SessionLocal
     from db.models import Horoscope, FortunePool, Story, Compatibility, TarotCard
 
-    for_date = date.fromisoformat(target_date) if target_date else date.today()
+    for_date = _parse_admin_date(target_date)
     date_str = for_date.isoformat()
     db = SessionLocal()
     try:
@@ -183,7 +231,7 @@ def content_status(target_date: str = None):
 
 
 # ── Admin: clear in-memory caches ────────────────────────────────────────────
-@app.post("/admin/clear-cache", tags=["Admin"])
+@app.post("/admin/clear-cache", tags=["Admin"], dependencies=[Depends(require_admin)])
 def clear_caches():
     """Clear all in-memory caches so the backend re-fetches from DB."""
     from services.horoscope_service import clear_horoscope_cache
@@ -193,8 +241,8 @@ def clear_caches():
 
 
 # ── Admin: refresh all daily AI content ──────────────────────────────────────
-@app.post("/admin/refresh-daily", tags=["Admin"])
-def refresh_daily_content(target_date: str = None):
+@app.post("/admin/refresh-daily", tags=["Admin"], dependencies=[Depends(require_admin)])
+def refresh_daily_content(target_date: str | None = None):
     """
     Generate and cache AI content for the given date (defaults to today).
     Call this once daily — e.g. from a cron job at 00:05.
@@ -218,7 +266,7 @@ def refresh_daily_content(target_date: str = None):
     from services.zodiac_service import ZODIAC_SIGNS
     from services.ai_prompts import FORTUNE_TOPICS
 
-    for_date = date.fromisoformat(target_date) if target_date else date.today()
+    for_date = _parse_admin_date(target_date)
     date_str = for_date.isoformat()
     db: Session = SessionLocal()
 
@@ -251,18 +299,19 @@ def refresh_daily_content(target_date: str = None):
                         result["horoscopes"]["failed"].append(sign)
                         continue
                     try:
-                        db.add(Horoscope(
-                            date=date_str,
-                            zodiac_sign=sign,
-                            general=hdata["general"],
-                            love=hdata["love"],
-                            career=hdata["career"],
-                            health=hdata["health"],
-                            overall_score=hdata["overall_score"],
-                            lucky_number=hdata["lucky_number"],
-                            lucky_color=hdata["lucky_color"],
-                            mood=hdata["mood"],
-                        ))
+                        with db.begin_nested():
+                            db.add(Horoscope(
+                                date=date_str,
+                                zodiac_sign=sign,
+                                general=hdata["general"],
+                                love=hdata["love"],
+                                career=hdata["career"],
+                                health=hdata["health"],
+                                overall_score=hdata["overall_score"],
+                                lucky_number=hdata["lucky_number"],
+                                lucky_color=hdata["lucky_color"],
+                                mood=hdata["mood"],
+                            ))
                         result["horoscopes"]["generated"].append(sign)
                     except Exception as exc:
                         logger.error("Failed to save horoscope for %s: %s", sign, exc)
@@ -276,14 +325,15 @@ def refresh_daily_content(target_date: str = None):
         if stories_data:
             for story in stories_data:
                 try:
-                    db.add(Story(
-                        title=story["title"],
-                        summary=story["summary"],
-                        content=story["content"],
-                        category=story["category"],
-                        read_time=story["read_time"],
-                        author=story.get("author", "CosmicGuide"),
-                    ))
+                    with db.begin_nested():
+                        db.add(Story(
+                            title=story["title"],
+                            summary=story["summary"],
+                            content=story["content"],
+                            category=story["category"],
+                            read_time=story["read_time"],
+                            author=story.get("author", "CosmicGuide"),
+                        ))
                     result["stories"]["generated"] += 1
                 except Exception as exc:
                     logger.error("Failed to save story: %s", exc)
@@ -323,12 +373,13 @@ def refresh_daily_content(target_date: str = None):
                             result["fortune_pool"]["skipped"] += 1
                             continue
                         try:
-                            db.add(FortunePool(
-                                date=date_str,
-                                zodiac_sign=sign,
-                                topic=topic,
-                                fortunes=fortunes,
-                            ))
+                            with db.begin_nested():
+                                db.add(FortunePool(
+                                    date=date_str,
+                                    zodiac_sign=sign,
+                                    topic=topic,
+                                    fortunes=fortunes,
+                                ))
                             result["fortune_pool"]["generated"] += 1
                         except Exception as exc:
                             logger.error("Failed to save fortune pool %s/%s: %s", sign, topic, exc)
@@ -345,7 +396,7 @@ def refresh_daily_content(target_date: str = None):
 
 
 # ── Admin: one-shot seeding (tarot + all compatibility pairs) ─────────────────
-@app.post("/admin/seed-oneshot", tags=["Admin"])
+@app.post("/admin/seed-oneshot", tags=["Admin"], dependencies=[Depends(require_admin)])
 def seed_oneshot_content(upgrade_tarot_with_ai: bool = False):
     """
     Seed permanent content that only needs to be generated once:
@@ -363,7 +414,7 @@ def seed_oneshot_content(upgrade_tarot_with_ai: bool = False):
     from db.database import SessionLocal
     from db.models import TarotCard, Compatibility
     from services.tarot_service import seed_tarot_db, TAROT_CARDS
-    from services.compatibility_service import ELEMENT_COMPATIBILITY, get_pair_score
+    from services.compatibility_service import ELEMENT_COMPATIBILITY, get_pair_score, canonical_pair
     from services.zodiac_service import ZODIAC_SIGNS, ZODIAC_ELEMENTS
     from services.ai_service import generate_batch_compatibility, generate_batch_tarot_interpretations
 
@@ -408,11 +459,11 @@ def seed_oneshot_content(upgrade_tarot_with_ai: bool = False):
         unique_pairs = []
         for i, s1 in enumerate(signs):
             for s2 in signs[i:]:  # includes same sign
-                unique_pairs.append((s1, s2))
+                unique_pairs.append(canonical_pair(s1, s2))
 
-        # Check which pairs already exist
+        # Check which pairs already exist (compare in the same canonical ordering)
         existing_pairs = {
-            (row.sign1, row.sign2)
+            canonical_pair(row.sign1, row.sign2)
             for row in db.query(Compatibility.sign1, Compatibility.sign2).all()
         }
         pairs_needed = [
@@ -442,18 +493,20 @@ def seed_oneshot_content(upgrade_tarot_with_ai: bool = False):
                     if not s1 or not s2:
                         result["compatibility"]["failed"] += 1
                         continue
-                    # Use canonical ordering from pair_dicts (already canonical)
-                    sc = next((p["score"] for p in batch
-                               if p["sign1"] == s1 and p["sign2"] == s2), 70)
+                    s1, s2 = canonical_pair(s1, s2)   # store in the reader's ordering
+                    sc = get_pair_score(s1, s2)       # deterministic, order-independent
                     try:
-                        db.add(Compatibility(
-                            sign1=s1, sign2=s2, score=sc,
-                            description=item.get("description", ""),
-                            love_advice=item.get("love_advice", ""),
-                            strengths=item.get("strengths_together", ""),
-                            challenges=item.get("challenges", ""),
-                        ))
+                        with db.begin_nested():       # SAVEPOINT: one bad row can't poison the batch
+                            db.add(Compatibility(
+                                sign1=s1, sign2=s2, score=sc,
+                                description=item.get("description", ""),
+                                love_advice=item.get("love_advice", ""),
+                                strengths=item.get("strengths_together", ""),
+                                challenges=item.get("challenges", ""),
+                            ))
                         result["compatibility"]["generated"] += 1
+                    except IntegrityError:
+                        result["compatibility"]["skipped"] += 1   # pair already present (race/re-run)
                     except Exception as exc:
                         logger.error("Failed to save compatibility %s x %s: %s", s1, s2, exc)
                         result["compatibility"]["failed"] += 1
@@ -478,6 +531,7 @@ app.include_router(stories.router, prefix=settings.API_PREFIX)
 app.include_router(chart.router, prefix=settings.API_PREFIX)
 app.include_router(vedic.router, prefix=settings.API_PREFIX)
 app.include_router(notifications.router, prefix=settings.API_PREFIX)
+app.include_router(users.router, prefix=settings.API_PREFIX)
 
 
 @app.on_event("startup")
@@ -490,6 +544,7 @@ def _on_startup():
 def _on_shutdown():
     from services.scheduler import shutdown_scheduler
     shutdown_scheduler()
+    engine.dispose()   # release pooled DB connections on shutdown
 
 
 @app.get("/", tags=["Root"])

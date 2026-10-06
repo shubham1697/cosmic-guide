@@ -39,6 +39,7 @@ from database.config import (
     configure_logging, get_logger,
     DATABASE_URL, AI_PROVIDER, AI_MODEL, GEMINI_API_KEY,
     OLLAMA_HOST, OLLAMA_MODEL, OLLAMA_TIMEOUT,
+    GEMINI_TIMEOUT,
     IPHONE_LLM_BASE_URL, IPHONE_LLM_MODEL, IPHONE_LLM_API_KEY, IPHONE_LLM_TIMEOUT,
 )
 
@@ -75,8 +76,16 @@ Base.metadata.create_all(engine)
 # Patch pre-existing tables for columns added after first creation (create_all
 # never alters an existing table). Keeps the populator safe if it runs before
 # the API backend has migrated the shared database.
-from shared.db_migrations import ensure_horoscope_system_column  # noqa: E402
+from shared.db_migrations import (  # noqa: E402
+    ensure_horoscope_system_column,
+    ensure_compatibility_canonical,
+    ensure_horoscope_lucky_number_string,
+    ensure_cache_unique_indexes,
+)
 ensure_horoscope_system_column(engine, log)
+ensure_compatibility_canonical(engine, log)
+ensure_horoscope_lucky_number_string(engine, log)
+ensure_cache_unique_indexes(engine, log)
 
 
 # ── Ollama helpers ────────────────────────────────────────────────────────────
@@ -191,7 +200,7 @@ def _gemini_generate(prompt: str, expect_json: bool = True,
     t0 = time.perf_counter()
     try:
         conn = http.client.HTTPSConnection("generativelanguage.googleapis.com",
-                                           timeout=OLLAMA_TIMEOUT)
+                                           timeout=GEMINI_TIMEOUT)
         conn.request("POST", path, body=json.dumps(body).encode(),
                      headers={"Content-Type": "application/json"})
         resp = conn.getresponse()
@@ -598,8 +607,6 @@ def populate_horoscopes(db, target_date: date, force: bool = False) -> int:
         if sign in existing and not force:
             log.info("  [SKIP] %s — already exists", sign)
             continue
-        if sign in existing and force:
-            delete_horoscope(db, sign, target_date)
 
         log.info("  [GEN] %s ...", sign)
         prompt = (
@@ -641,6 +648,12 @@ def populate_horoscopes(db, target_date: date, force: bool = False) -> int:
 
         data.setdefault("zodiac_sign", sign)
         data.setdefault("date", date_str)
+
+        # Replace only once the new reading is in hand: deleting first meant a
+        # --force run against a flaky LLM destroyed the existing horoscope and
+        # left nothing in its place.
+        if sign in existing:
+            delete_horoscope(db, sign, target_date)
 
         if save_horoscope(db, data):
             log.info("  [OK] %s  score=%s  mood=%s",
@@ -715,8 +728,6 @@ def populate_periodic(db, target_date: date, period: str, force: bool = False) -
         if sign in existing and not force:
             log.info("  [SKIP] %s — already exists", sign)
             continue
-        if sign in existing and force:
-            delete_periodic_horoscope(db, sign, period, period_key, system)
 
         log.info("  [GEN] %s %s ...", period, sign)
         prompt = _period_prompt(sign, period, start, end)
@@ -744,6 +755,10 @@ def populate_periodic(db, target_date: date, period: str, force: bool = False) -
         data["period"] = period
         data["period_key"] = period_key
         data["system"] = system
+
+        # Replace only once the new reading is in hand (see populate_horoscopes).
+        if sign in existing:
+            delete_periodic_horoscope(db, sign, period, period_key, system)
 
         if save_periodic_horoscope(db, data):
             log.info("  [OK] %s  score=%s  mood=%s",
@@ -917,6 +932,8 @@ STORY_CATEGORIES = ["Planetary", "Weekly", "Relationships", "Rituals", "Career",
 
 
 def populate_stories(db, force: bool = False) -> int:
+    from database.models import Story
+
     generated = 0
 
     existing_count = story_count(db)
@@ -926,8 +943,11 @@ def populate_stories(db, force: bool = False) -> int:
         log.info("Stories already populated — skipping (use --force to regenerate)")
         return 0
 
+    # Retired only once replacements are committed, so a failed run never
+    # empties the feed and repeated --force runs don't grow the table forever.
+    previous_ids = [row.id for row in db.query(Story.id).all()] if force else []
     if force:
-        log.info("Force mode — adding a fresh set of stories; %d existing kept", existing_count)
+        log.info("Force mode — regenerating; %d existing stories retire once new ones land", len(previous_ids))
 
     for category in STORY_CATEGORIES:
         log.info("  [GEN] Story: %s ...", category)
@@ -974,6 +994,14 @@ def populate_stories(db, force: bool = False) -> int:
             generated += 1
         else:
             log.error("  [FAIL] Story %s — DB error", category)
+
+    if previous_ids:
+        if generated:
+            db.query(Story).filter(Story.id.in_(previous_ids)).delete(synchronize_session=False)
+            db.commit()
+            log.info("Stories: retired %d previous stories", len(previous_ids))
+        else:
+            log.warning("Stories: nothing generated (LLM down?) — keeping %d existing", len(previous_ids))
 
     log.info("Stories: %d/%d generated", generated, len(STORY_CATEGORIES))
     return generated
@@ -1058,15 +1086,18 @@ def seed_tarot(db, force: bool = False) -> int:
 
 def seed_compatibility(db, force: bool = False) -> int:
     from database.models import Compatibility
-    existing = db.query(Compatibility).count()
-    if existing >= len(SIGN_PAIR_SCORES) and not force:
-        log.info("Compatibility: already seeded (%d pairs) — skip", existing)
+    existing = {(r.sign1, r.sign2) for r in db.query(Compatibility.sign1, Compatibility.sign2).all()}
+    if len(existing) >= len(SIGN_PAIR_SCORES) and not force:
+        log.info("Compatibility: already seeded (%d pairs) — skip", len(existing))
         return 0
     if force:
         db.query(Compatibility).delete()
         db.flush()
+        existing = set()
     inserted = 0
     for (s1, s2), score in SIGN_PAIR_SCORES.items():
+        if (s1, s2) in existing:   # SIGN_PAIR_SCORES keys are already canonical (alphabetical)
+            continue
         try:
             db.add(Compatibility(
                 sign1=s1, sign2=s2, score=score,

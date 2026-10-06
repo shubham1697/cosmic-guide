@@ -3,6 +3,12 @@ from pydantic.alias_generators import to_camel
 from typing import Optional
 from datetime import datetime
 
+# Shared input formats. A birth date/time that does not match these is rejected
+# at the boundary rather than silently defaulting to noon deep in the ephemeris.
+DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+_MAX_PLACE_LEN = 200
+
 
 class CamelModel(BaseModel):
     """Base model that serializes to camelCase JSON (matching Flutter conventions)."""
@@ -14,36 +20,28 @@ class CamelModel(BaseModel):
 
 
 # --- User Schemas ---
+# Credentials are handled by Firebase, so nothing here accepts a password.
 
-class UserCreate(CamelModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    email: EmailStr
-    password: str = Field(..., min_length=6)
+class UserProfile(CamelModel):
+    """The signed-in user's synced profile."""
+    firebase_uid: str
+    email: Optional[str] = None
+    name: Optional[str] = None
     birth_date: Optional[str] = None
     birth_time: Optional[str] = None
     birth_place: Optional[str] = None
     zodiac_sign: Optional[str] = None
+    tradition: str = "western"
+    is_premium: bool = False
 
 
-class UserResponse(CamelModel):
-    id: int
-    name: str
-    email: str
-    birth_date: Optional[str] = None
-    birth_time: Optional[str] = None
-    birth_place: Optional[str] = None
-    zodiac_sign: Optional[str] = None
-    is_premium: bool
-
-
-class LoginRequest(CamelModel):
-    email: EmailStr
-    password: str
-
-
-class TokenResponse(CamelModel):
-    access_token: str
-    token_type: str = "bearer"
+class UserProfileUpdate(CamelModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100)
+    birth_date: Optional[str] = Field(default=None, pattern=DATE_PATTERN)
+    birth_time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)
+    birth_place: Optional[str] = Field(default=None, max_length=_MAX_PLACE_LEN)
+    zodiac_sign: Optional[str] = Field(default=None, max_length=20)
+    tradition: Optional[str] = Field(default=None, pattern=r"^(western|vedic)$")
 
 
 # --- Horoscope Schemas ---
@@ -125,9 +123,9 @@ class CompatibilityResponse(CamelModel):
 
 class BirthDetails(CamelModel):
     name: str = Field(..., min_length=1, max_length=100)
-    birth_date: str
-    birth_time: Optional[str] = None
-    birth_place: Optional[str] = None
+    birth_date: str = Field(..., pattern=DATE_PATTERN)
+    birth_time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)
+    birth_place: Optional[str] = Field(default=None, max_length=_MAX_PLACE_LEN)
 
 
 class KundliRequest(CamelModel):
@@ -167,9 +165,9 @@ class StoryListResponse(CamelModel):
 # --- Birth Chart Schemas ---
 
 class BirthChartRequest(CamelModel):
-    birth_date: str = Field(..., pattern=r"^\d{4}-\d{2}-\d{2}$")
-    birth_time: Optional[str] = None   # HH:MM (24h)
-    birth_place: Optional[str] = None
+    birth_date: str = Field(..., pattern=DATE_PATTERN)
+    birth_time: Optional[str] = Field(default=None, pattern=TIME_PATTERN)   # HH:MM (24h)
+    birth_place: Optional[str] = Field(default=None, max_length=_MAX_PLACE_LEN)
 
 
 class PlanetPosition(CamelModel):

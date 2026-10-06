@@ -1,8 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declared explicitly: release builds otherwise inherit INTERNET only
+         transitively from the Firebase plugins. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="cosmic_guide"
+        android:label="CosmicGuide"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

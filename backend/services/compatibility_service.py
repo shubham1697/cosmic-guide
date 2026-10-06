@@ -10,9 +10,14 @@ import time
 logger = get_logger(__name__)
 
 
-def _canonical(sign1: str, sign2: str) -> tuple:
-    """Return a canonical (alphabetical) ordering of two sign names for DB lookup."""
+def canonical_pair(sign1: str, sign2: str) -> tuple:
+    """Canonical (alphabetical) ordering of a sign pair — the single ordering used
+    by every compatibility read and write path so a pair maps to exactly one row."""
     return (sign1, sign2) if sign1 <= sign2 else (sign2, sign1)
+
+
+# Backwards-compatible internal alias.
+_canonical = canonical_pair
 
 
 def get_pair_score(sign1: str, sign2: str) -> int:
@@ -92,10 +97,10 @@ def get_compatibility(sign1: str, sign2: str, db=None) -> dict:
                 log_db_query("SELECT", "compatibility", f"where sign1={s_a} AND sign2={s_b}", rows_affected=0, elapsed_ms=elapsed_ms)
                 logger.debug("get_compatibility  DB MISS  %s x %s", sign1, sign2)
         except Exception as exc:
-            logger.warning("get_compatibility  DB query failed (%s)", exc)
+            logger.warning("get_compatibility  DB query failed (%s) — falling through to AI", exc)
             log_db_query("SELECT", "compatibility", f"where sign1={s_a} AND sign2={s_b}", error=exc, elapsed_ms=0)
-            logger.warning("get_compatibility  source=mock  %s x %s  reason=db_fetch_failed", sign1, sign2)
-            return _mock_compatibility(sign1, sign2, score, elem1, elem2)
+            # A DB read failure is treated like a cache miss: fall through to the AI
+            # step so a healthy LLM still serves fresh content; mock is the final fallback.
 
     # ── 2. AI-generated descriptions ────────────────────────────────────────────
     try:
@@ -137,7 +142,7 @@ def get_compatibility(sign1: str, sign2: str, db=None) -> dict:
         logger.warning("get_compatibility  AI returned None  %s x %s", sign1, sign2)
     except Exception as exc:
         logger.warning(
-            "get_compatibility  AI exception (%s)  %s x %s — raising 503",
+            "get_compatibility  AI exception (%s)  %s x %s — falling back to mock",
             exc, sign1, sign2,
         )
 

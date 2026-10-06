@@ -11,7 +11,10 @@ def _ensure_shared_importable() -> None:
     """
     here = os.path.dirname(os.path.abspath(__file__))
     for _ in range(5):
-        if os.path.isdir(os.path.join(here, "shared")):
+        # Match the directory that actually CONTAINS the shared package (its
+        # llm_config module), not just any empty ``shared/`` dir that could
+        # shadow the real one.
+        if os.path.isfile(os.path.join(here, "shared", "llm_config.py")):
             if here not in sys.path:
                 sys.path.insert(0, here)
             return
@@ -39,6 +42,7 @@ _llm = load_llm_config()
 AI_PROVIDER = _llm.ai_provider
 AI_MODEL = _llm.ai_model
 GEMINI_API_KEY = _llm.gemini_api_key
+GEMINI_TIMEOUT = _llm.gemini_timeout
 
 # Ollama — the stdlib http.client used here needs a bare host:port
 OLLAMA_HOST = _llm.ollama_host

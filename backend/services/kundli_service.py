@@ -10,8 +10,8 @@ from logger import get_logger
 from services.birth_chart_service import calculate_birth_chart
 from data.astro_constants import NAKSHATRAS
 from data.kundli_tables import (
-    VARNA, VASHYA_SIGN, YONI_ANIMAL, YONI_COMPAT,
-    GANA, NADI, RASHI_LORD, GRAHA_FRIENDSHIP,
+    VARNA_RASHI, VASHYA_SIGN, YONI_ANIMAL, yoni_points,
+    GANA, NADI, RASHI_LORD, graha_maitri_points,
 )
 
 logger = get_logger(__name__)
@@ -29,10 +29,10 @@ def _rashi_from_moon(moon_lon: float) -> int:
 
 # ── Koota scoring functions ──────────────────────────────────────────────────
 
-def _varna_score(nak1: int, nak2: int) -> int:
-    """Varna Koota (max 1). Boy's varna >= Girl's varna."""
-    v1, v2 = VARNA[nak1], VARNA[nak2]
-    return 1 if v1 >= v2 else 0
+def _varna_score(rashi1: int, rashi2: int) -> int:
+    """Varna Koota (max 1). Boy's varna equal or higher (0=Brahmin is highest)."""
+    v1, v2 = VARNA_RASHI[rashi1], VARNA_RASHI[rashi2]
+    return 1 if v1 <= v2 else 0
 
 
 def _vashya_score(rashi1: int, rashi2: int) -> int:
@@ -62,26 +62,12 @@ def _tara_score(nak1: int, nak2: int) -> int:
 
 def _yoni_score(nak1: int, nak2: int) -> int:
     """Yoni Koota (max 4). Animal compatibility."""
-    y1, y2 = YONI_ANIMAL[nak1], YONI_ANIMAL[nak2]
-    if y1 == y2:
-        return 4
-    # Friendly / neutral / enemy pairs (simplified)
-    diff = abs(y1 - y2)
-    if diff <= 2:
-        return 3
-    elif diff <= 5:
-        return 2
-    elif diff <= 8:
-        return 1
-    return 0
+    return yoni_points(YONI_ANIMAL[nak1], YONI_ANIMAL[nak2])
 
 
 def _graha_maitri_score(rashi1: int, rashi2: int) -> int:
     """Graha Maitri Koota (max 5). Lord friendship."""
-    lord1 = RASHI_LORD[rashi1]
-    lord2 = RASHI_LORD[rashi2]
-    score = GRAHA_FRIENDSHIP.get((lord1, lord2), 3)
-    return score
+    return graha_maitri_points(RASHI_LORD[rashi1], RASHI_LORD[rashi2])
 
 
 def _gana_score(nak1: int, nak2: int) -> int:
@@ -189,7 +175,7 @@ def calculate_kundli(person1: dict, person2: dict) -> dict:
 
     # Calculate all 8 Koota scores
     koota_scores = {
-        "Varna":        _varna_score(nak1, nak2),
+        "Varna":        _varna_score(rashi1, rashi2),
         "Vashya":       _vashya_score(rashi1, rashi2),
         "Tara":         _tara_score(nak1, nak2),
         "Yoni":         _yoni_score(nak1, nak2),

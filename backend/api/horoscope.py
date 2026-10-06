@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from schemas import HoroscopeResponse, ForecastResponse
+from schemas import DATE_PATTERN, TIME_PATTERN, HoroscopeResponse, ForecastResponse
 from services.horoscope_service import get_horoscope, get_periodic_horoscope, get_forecast
 from services.zodiac_service import ZODIAC_SIGNS
 from logger import get_logger
@@ -21,15 +21,15 @@ def today_horoscope(
         pattern="^(western|vedic)$",
     ),
     birth_date: str | None = Query(
-        default=None, alias="birthDate",
+        default=None, alias="birthDate", pattern=DATE_PATTERN,
         description="YYYY-MM-DD. When provided, returns a personalized transit-to-natal reading.",
     ),
     birth_time: str | None = Query(
-        default=None, alias="birthTime",
+        default=None, alias="birthTime", pattern=TIME_PATTERN,
         description="HH:MM (24h). Sharpens the personalized reading (enables houses & rising).",
     ),
     birth_place: str | None = Query(
-        default=None, alias="birthPlace",
+        default=None, alias="birthPlace", max_length=200,
         description="City/place name for the personalized reading.",
     ),
     db: Session = Depends(get_db),
@@ -56,11 +56,13 @@ def today_horoscope(
 @router.get("/forecast", response_model=ForecastResponse)
 def horoscope_forecast(
     birth_date: str = Query(
-        ..., alias="birthDate", pattern=r"^\d{4}-\d{2}-\d{2}$",
+        ..., alias="birthDate", pattern=DATE_PATTERN,
         description="YYYY-MM-DD — required; the forecast is personal to this chart.",
     ),
-    birth_time: str | None = Query(default=None, alias="birthTime", description="HH:MM (24h)"),
-    birth_place: str | None = Query(default=None, alias="birthPlace", description="City/place name"),
+    birth_time: str | None = Query(default=None, alias="birthTime", pattern=TIME_PATTERN,
+                                   description="HH:MM (24h)"),
+    birth_place: str | None = Query(default=None, alias="birthPlace", max_length=200,
+                                    description="City/place name"),
     system: str = Query("western", pattern="^(western|vedic)$"),
     days: int = Query(30, ge=3, le=30, description="Forecast window length (days)"),
 ):

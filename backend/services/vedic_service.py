@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import swisseph as swe
 
 from data.astro_constants import NAKSHATRAS, NAKSHATRA_LORDS
+from data.zodiac_data import ZODIAC_SIGNS
 from data.mock.vedic_content_data import VEDIC_CONTENT
 from data.vedic_reference import (
     DASHA_SEQUENCE,
@@ -23,7 +24,6 @@ from data.vedic_reference import (
     PLANET_GEMSTONES,
     PLANET_MANTRAS,
     RAHU_KAAL_OCTANT,
-    RASHI_NAMES,
     TITHI_NAMES,
     VARA_NAMES,
     VARA_RULERS,
@@ -32,7 +32,7 @@ from data.vedic_reference import (
     YOGA_NAMES,
 )
 from logger import get_logger
-from services.birth_chart_service import calculate_birth_chart, geocode_place
+from services.birth_chart_service import calculate_birth_chart, geocode_place, parse_birth_time
 
 logger = get_logger(__name__)
 
@@ -55,32 +55,30 @@ def _to_julian_day(dt_utc: datetime) -> float:
     return swe.julday(dt_utc.year, dt_utc.month, dt_utc.day, hour_decimal)
 
 
-def _timezone_name(place: str | None) -> str:
+def _timezone_name(place: str | None, default: str = "Asia/Kolkata") -> str:
     if not place:
-        return "Asia/Kolkata"
+        return default
     coords = geocode_place(place)
     if not coords:
-        return "Asia/Kolkata"
+        return default
     try:
         from services.birth_chart_service import _get_timezone  # noqa: PLC0415
 
         return _get_timezone(coords[0], coords[1])
     except Exception:
-        return "Asia/Kolkata"
+        return default
 
 
 def _birth_jd(birth_date: str, birth_time: str | None, birth_place: str | None) -> float:
     bd = datetime.strptime(birth_date, "%Y-%m-%d")
-    hour = 12
-    minute = 0
-    if birth_time:
-        try:
-            parts = birth_time.split(":")
-            hour = int(parts[0])
-            minute = int(parts[1])
-        except (ValueError, IndexError):
-            logger.warning("Invalid birth_time '%s', using 12:00", birth_time)
-    tz_name = _timezone_name(birth_place)
+    # Shares calculate_birth_chart's parser so both agree on what "no usable
+    # birth time" means (and neither crashes on e.g. "25:99").
+    hour, minute = parse_birth_time(birth_time) or (12, 0)
+    # Must resolve exactly like calculate_birth_chart, which falls back to UTC
+    # when the birth place is missing or un-geocodable. Defaulting to IST here
+    # instead shifted the birth Moon by 5.5h, so the Dasha could be derived from
+    # a different nakshatra than the Kundli shown beside it in the same response.
+    tz_name = _timezone_name(birth_place, default="UTC")
     local_dt = datetime(bd.year, bd.month, bd.day, hour, minute, tzinfo=ZoneInfo(tz_name))
     return _to_julian_day(local_dt.astimezone(ZoneInfo("UTC")))
 
@@ -178,8 +176,10 @@ def _sidereal_longitude(jd: float, planet_id: int) -> float:
     return result[0] % 360
 
 
-def _rashi_name_from_longitude(longitude: float) -> str:
-    return RASHI_NAMES[int(longitude / 30) % 12]
+def _sign_name_from_longitude(longitude: float) -> str:
+    # English sign name — the app's canonical label (used by /chart, the sign
+    # resolver, and the horoscope prompt). Keeps /vedic and /chart consistent.
+    return ZODIAC_SIGNS[int(longitude / 30) % 12]
 
 
 def _nakshatra_from_longitude(longitude: float) -> dict:
@@ -216,18 +216,15 @@ def _hindu_month_name(target_date: date) -> str:
     return current
 
 
-def _next_festival(target_date: date) -> dict:
+def _next_festival(target_date: date) -> dict | None:
     for item in FESTIVAL_DATES:
         fest_date = date.fromisoformat(item["date"])
         if fest_date >= target_date:
             note = VEDIC_CONTENT["festivals"].get(item["name"], "")
             return {"name": item["name"], "date": item["date"], "note": note}
-    item = FESTIVAL_DATES[-1]
-    return {
-        "name": item["name"],
-        "date": item["date"],
-        "note": VEDIC_CONTENT["festivals"].get(item["name"], ""),
-    }
+    # All hard-coded festival dates are in the past — signal staleness rather than
+    # silently returning a past date (the list needs refreshing / a Panchang engine).
+    return None
 
 
 def _abbreviate_date(iso_date: str) -> str:
@@ -278,9 +275,13 @@ def _current_dasha(birth_date: str, birth_time: str | None, birth_place: str | N
     maha_days = max(1, (maha_end - maha_start).days)
     elapsed_days = max(0, (target_date - maha_start).days)
 
+    # Antardashas run in the standard order but starting from the mahadasha lord.
+    maha_index = DASHA_SEQUENCE.index(maha_lord)
+    sub_order = [DASHA_SEQUENCE[(maha_index + i) % len(DASHA_SEQUENCE)]
+                 for i in range(len(DASHA_SEQUENCE))]
     sub_periods = []
     cursor = maha_start
-    for sub_lord in DASHA_SEQUENCE:
+    for sub_lord in sub_order:
         sub_days = max(1, int(maha_days * (DASHA_YEARS[sub_lord] / 120.0)))
         sub_end = cursor + timedelta(days=sub_days)
         sub_periods.append(
@@ -340,7 +341,7 @@ def _detect_doshas(chart: dict, birth_date: str, birth_time: str | None, birth_p
     if diff in (11, 0, 1):
         active.append("Sade Sati")
 
-    rahu_lon = _sidereal_longitude(jd_birth, swe.TRUE_NODE)
+    rahu_lon = _sidereal_longitude(jd_birth, swe.MEAN_NODE)  # mean node — consistent with birth_chart_service
     ketu_lon = (rahu_lon + 180) % 360
     seven = [
         _sidereal_longitude(jd_birth, _PLANET_IDS[name])
@@ -435,6 +436,7 @@ def get_vedic_home_summary(
         "insight": _panchang_insight(vara_ruler, paksha),
     }
 
+    fest = _next_festival(today)
     result = {
         "location": {
             "name": location_name,
@@ -446,9 +448,9 @@ def get_vedic_home_summary(
         "calendar": {
             "month_name": _hindu_month_name(today),
             "samvat_year": _samvat_year(today),
-            "next_festival_name": _next_festival(today)["name"],
-            "next_festival_date": _abbreviate_date(_next_festival(today)["date"]),
-            "note": _next_festival(today)["note"],
+            "next_festival_name": fest["name"] if fest else "To be announced",
+            "next_festival_date": _abbreviate_date(fest["date"]) if fest else "",
+            "note": fest["note"] if fest else "Upcoming festival dates will be updated soon.",
         },
         "muhurta": _muhurta_summary(today, lat, lon, tz_name),
         "timings": _daily_timings(today, lat, lon, tz_name),
@@ -469,8 +471,8 @@ def get_vedic_home_summary(
     birth_nak = _nakshatra_from_longitude(sidereal_moon)
 
     kundli = {
-        "lagna": _rashi_name_from_longitude(sidereal_asc),
-        "moon_sign": _rashi_name_from_longitude(sidereal_moon),
+        "lagna": _sign_name_from_longitude(sidereal_asc),
+        "moon_sign": _sign_name_from_longitude(sidereal_moon),
         "nakshatra": birth_nak["name"],
         "note": "Birth time missing — Lagna estimated from the Moon sign." if not birth_time else "Chart summary ready.",
     }

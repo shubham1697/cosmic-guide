@@ -21,50 +21,20 @@ logger = get_logger(__name__)
 
 # Lazily-imported firebase symbols (import is cheap, init is what we gate).
 try:  # pragma: no cover - import guard
-    import firebase_admin
-    from firebase_admin import credentials, messaging
+    from firebase_admin import messaging
     _FIREBASE_IMPORTED = True
 except Exception as exc:  # pragma: no cover
-    firebase_admin = None  # type: ignore
-    credentials = None  # type: ignore
     messaging = None  # type: ignore
     _FIREBASE_IMPORTED = False
     logger.warning("firebase-admin not importable (%s); push sends disabled.", exc)
 
-_initialized = False
-_enabled = False
-
 
 def _ensure_init() -> bool:
-    """Initialize the Firebase app once. Returns True when sending is possible."""
-    global _initialized, _enabled
-    if _initialized:
-        return _enabled
-    _initialized = True
-
+    """Whether sending is possible: the shared Firebase app must be available."""
     if not _FIREBASE_IMPORTED:
-        _enabled = False
         return False
-
-    path = settings.FCM_CREDENTIALS_PATH
-    if not path or not os.path.isfile(path):
-        logger.warning(
-            "FCM disabled: no service-account file at FCM_CREDENTIALS_PATH=%r. "
-            "Notification endpoints work but sends are no-ops until configured.",
-            path,
-        )
-        _enabled = False
-        return False
-
-    try:
-        cred = credentials.Certificate(path)
-        firebase_admin.initialize_app(cred)
-        _enabled = True
-        logger.info("FCM initialized from %s", path)
-    except Exception as exc:  # pragma: no cover - depends on external creds
-        logger.error("FCM init failed (%s); sends disabled.", exc)
-        _enabled = False
-    return _enabled
+    from firebase_app import get_app
+    return get_app() is not None
 
 
 def is_enabled() -> bool:

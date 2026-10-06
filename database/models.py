@@ -1,19 +1,26 @@
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Float, Text, DateTime, Boolean, JSON, UniqueConstraint
 from datetime import datetime, timezone
 from database.connection import Base
 
 
 class User(Base):
+    """A signed-in account. Credentials live in Firebase, never here.
+
+    Mirrors backend/db/models.py::User exactly — both run create_all against
+    the same database, so any drift here produces the wrong table.
+    """
+
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
+    firebase_uid = Column(String(128), unique=True, index=True, nullable=False)
+    email = Column(String(255), index=True)
+    name = Column(String(100))
     birth_date = Column(String(10))
     birth_time = Column(String(5))
     birth_place = Column(String(255))
     zodiac_sign = Column(String(20))
+    tradition = Column(String(10), default="western")
     is_premium = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -21,6 +28,7 @@ class User(Base):
 
 class Horoscope(Base):
     __tablename__ = "horoscopes"
+    __table_args__ = (UniqueConstraint("date", "zodiac_sign", "system", name="uq_horoscope_day"),)
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(String(10), index=True)
@@ -32,7 +40,7 @@ class Horoscope(Base):
     career = Column(Text)
     health = Column(Text)
     overall_score = Column(Integer)
-    lucky_number = Column(Integer)
+    lucky_number = Column(String(10))
     lucky_color = Column(String(50))
     mood = Column(String(50))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -41,6 +49,7 @@ class Horoscope(Base):
 class PeriodicHoroscope(Base):
     """Weekly and monthly readings, cached per (period, key, system, sign)."""
     __tablename__ = "periodic_horoscopes"
+    __table_args__ = (UniqueConstraint("period", "period_key", "system", "zodiac_sign", name="uq_periodic_horoscope"),)
 
     id = Column(Integer, primary_key=True, index=True)
     period = Column(String(10), index=True)       # 'weekly' | 'monthly'
@@ -71,6 +80,7 @@ class TarotCard(Base):
 
 class Compatibility(Base):
     __tablename__ = "compatibility"
+    __table_args__ = (UniqueConstraint("sign1", "sign2", name="uq_compatibility_pair"),)
 
     id = Column(Integer, primary_key=True, index=True)
     sign1 = Column(String(20), index=True)
@@ -110,6 +120,7 @@ class Story(Base):
 
 class FortunePool(Base):
     __tablename__ = "fortune_pool"
+    __table_args__ = (UniqueConstraint("date", "zodiac_sign", "topic", name="uq_fortune_pool"),)
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(String(10), index=True)

@@ -1,5 +1,6 @@
 """Horoscope data and retrieval."""
 
+from collections import OrderedDict
 from datetime import date, timedelta
 import time
 
@@ -9,19 +10,44 @@ from data.mock.horoscope_data import HOROSCOPE_DATA, DEFAULT_HOROSCOPE
 
 logger = get_logger(__name__)
 
+
+class _BoundedCache(OrderedDict):
+    """Dict-like LRU with a hard max size; evicts the least-recently-used entry
+    when full so a long-running process can't grow without bound (defect #10)."""
+
+    def __init__(self, maxsize: int):
+        super().__init__()
+        self._maxsize = maxsize
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        self.move_to_end(key)
+        return value
+
+    def get(self, key, default=None):
+        return self[key] if key in self else default
+
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        super().__setitem__(key, value)
+        while len(self) > self._maxsize:
+            self.popitem(last=False)
+
+
 # In-memory cache: { (zodiac_sign, system, "YYYY-MM-DD"): dict }
 # Ensures all requests in the same process return the same daily result.
-_horoscope_cache: dict = {}
+_horoscope_cache = _BoundedCache(512)
 
 # In-memory cache for weekly/monthly readings:
 #   { (zodiac_sign, system, period, period_key): dict }
-_periodic_cache: dict = {}
+_periodic_cache = _BoundedCache(512)
 
 # In-memory cache for PERSONALIZED daily readings (natal chart + transits):
 #   { (zodiac_sign, system, "YYYY-MM-DD", birth_hash): dict }
 # Kept separate from the shared per-sign caches so one person's chart-specific
 # reading is never served to (or persisted for) everyone with that sign.
-_personalized_cache: dict = {}
+_personalized_cache = _BoundedCache(4096)
 
 
 def _mock_horoscope(zodiac_sign: str, today_str: str) -> dict:
@@ -76,8 +102,13 @@ def _build_personalized_context(birth_date: str, birth_time, birth_place, system
 
 def _get_personalized_horoscope(zodiac_sign: str, system: str, today, today_str: str,
                                 birth_date: str, birth_time, birth_place):
-    """Return a genuinely personal daily reading (natal chart + live transits),
-    or None if it can't be produced so the caller falls back to the generic one.
+    """Return ``(reading, day)`` for a chart-specific daily reading.
+
+    ``reading`` is the full personal reading, or None when it can't be produced
+    so the caller falls back to the generic one. ``day`` is the chart-derived
+    score/band/summary from :func:`describe_day`, which needs no LLM — it is
+    returned even when the AI step fails so the caller can still show real
+    numbers alongside generic text.
 
     Cached per (sign, system, date, birth_hash) in ``_personalized_cache`` and
     never written to the shared per-sign DB cache.
@@ -89,28 +120,30 @@ def _get_personalized_horoscope(zodiac_sign: str, system: str, today, today_str:
     cache_key = (zodiac_sign, system, today_str, birth_hash)
     if cache_key in _personalized_cache:
         logger.info("get_horoscope  source=memory(personal)  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
-        return _personalized_cache[cache_key]
+        return _personalized_cache[cache_key], None
 
     try:
         context = _build_personalized_context(birth_date, birth_time, birth_place, system)
     except Exception as exc:
         logger.warning("get_horoscope  personalization context failed (%s)  sign=%s", exc, zodiac_sign)
-        return None
+        return None, None
+
+    # Chart math first: these numbers survive an LLM outage.
+    from services.birth_chart_service import describe_day
+    day = describe_day(context.get("transit_aspects", []))
 
     try:
         from services.ai_service import generate_daily_horoscope
         ai_data = generate_daily_horoscope(zodiac_sign, today, system=system, astro_context=context)
     except Exception as exc:
         logger.warning("get_horoscope  personalized AI exception (%s)  sign=%s", exc, zodiac_sign)
-        return None
+        return None, day
 
     if not ai_data:
-        return None
+        return None, day
 
     # Ground the headline score, its band label, and a one-line "why" in the
     # real chart rather than the LLM's guess.
-    from services.birth_chart_service import describe_day
-    day = describe_day(context.get("transit_aspects", []))
     if day is not None:
         ai_data["overall_score"] = day["score"]
         ai_data["band"] = day["band"]
@@ -125,12 +158,12 @@ def _get_personalized_horoscope(zodiac_sign: str, system: str, today, today_str:
         "personalized": True,
     }
     _personalized_cache[cache_key] = result
-    return result
+    return result, day
 
 
 # In-memory cache for the personalized energy forecast (full 30-day series):
 #   { (birth_hash, system, "YYYY-MM-DD"): list[dict] }
-_forecast_cache: dict = {}
+_forecast_cache = _BoundedCache(2048)
 _FORECAST_MAX_DAYS = 30
 
 
@@ -209,7 +242,8 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None,
     first — grounded in the reader's real natal chart and today's transits to
     it. It has its own in-memory cache and is never written to the shared
     per-sign DB cache. If the AI is unavailable the code falls through to the
-    generic per-sign resolution below.
+    generic per-sign resolution below, but keeps the chart-derived score, band
+    and "why" (which need no LLM) layered on top of the generic text.
 
     Resolution order:
     0. Personalized transit-to-natal reading (only when birth_date is given).
@@ -227,8 +261,9 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None,
 
     # Personalized reading (real natal chart + today's transits) comes first so
     # a chart-specific request never reads or writes the shared per-sign cache.
+    day = None
     if birth_date:
-        personal = _get_personalized_horoscope(
+        personal, day = _get_personalized_horoscope(
             zodiac_sign, system, today, today_str,
             birth_date, birth_time, birth_place,
         )
@@ -239,6 +274,25 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None,
             zodiac_sign, system,
         )
 
+    result = _get_generic_horoscope(zodiac_sign, system, db, today, today_str)
+
+    # The chart maths survived even though the text did not, so keep the real
+    # score/band/why instead of the template's placeholder number. Copied so the
+    # shared per-sign caches keep the un-personalised values.
+    if day is not None:
+        result = {
+            **result,
+            "overall_score": day["score"],
+            "band": day["band"],
+            "mood_summary": day["summary"],
+        }
+        logger.info("get_horoscope  generic text + chart score  sign=%s  score=%s  band=%s",
+                    zodiac_sign, day["score"], day["band"])
+    return result
+
+
+def _get_generic_horoscope(zodiac_sign: str, system: str, db, today, today_str: str) -> dict:
+    """Shared per-sign reading: memory cache → DB row → AI → static template."""
     # ── 1. In-memory cache ───────────────────────────────────────────────────
     cache_key = (zodiac_sign, system, today_str)
     if cache_key in _horoscope_cache:
@@ -282,10 +336,10 @@ def get_horoscope(zodiac_sign: str, system: str = "western", db=None,
                 log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", rows_affected=0, elapsed_ms=elapsed_ms)
                 logger.debug("get_horoscope  DB MISS  sign=%s", zodiac_sign)
         except Exception as exc:
-            logger.warning("get_horoscope  DB query failed (%s)", exc)
+            logger.warning("get_horoscope  DB query failed (%s) — falling through to AI", exc)
             log_db_query("SELECT", "horoscope", f"where sign={zodiac_sign} date={today_str}", error=exc, elapsed_ms=0)
-            logger.warning("get_horoscope  source=mock  sign=%s  date=%s  reason=db_fetch_failed", zodiac_sign, today_str)
-            return _mock_horoscope(zodiac_sign, today_str)
+            # A DB read failure is treated like a cache miss: fall through to the AI
+            # step so a healthy LLM still serves fresh content; mock is the final fallback.
 
     # ── 3. AI generation ─────────────────────────────────────────────────────
     try:
@@ -472,7 +526,9 @@ def get_periodic_horoscope(zodiac_sign: str, period: str,
 
 
 def clear_horoscope_cache():
-    """Clear the in-memory horoscope caches (call after DB repopulation)."""
+    """Clear all in-memory horoscope caches (call after DB repopulation)."""
     _horoscope_cache.clear()
     _periodic_cache.clear()
+    _personalized_cache.clear()
+    _forecast_cache.clear()
     logger.info("Horoscope in-memory caches cleared")

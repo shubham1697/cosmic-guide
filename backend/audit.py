@@ -73,10 +73,13 @@ def _get_audit_logger() -> logging.Logger:
         # If the log dir isn't writable we still want stdout auditing below.
         pass
 
-    # Mirror to stdout so records are visible in `docker logs`.
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(logging.Formatter("AUDIT %(message)s"))
-    audit_logger.addHandler(stream_handler)
+    # Mirror to stdout so records also show up in `docker logs`. This duplicates
+    # the audit trail already persisted to the rotated file, so make it opt-out:
+    # set AUDIT_LOG_STDOUT=false to keep the audit trail file-only.
+    if os.getenv("AUDIT_LOG_STDOUT", "true").lower() == "true":
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(logging.Formatter("AUDIT %(message)s"))
+        audit_logger.addHandler(stream_handler)
 
     _configured = True
     return audit_logger

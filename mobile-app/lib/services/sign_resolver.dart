@@ -3,7 +3,7 @@ import 'api_service.dart';
 
 /// The reading identity resolved for the user's chosen tradition.
 ///
-/// Western (and the "both"/default) readings are keyed on the tropical Sun
+/// Western (and the default) readings are keyed on the tropical Sun
 /// sign. Vedic readings are keyed on the sidereal Moon sign (Janma Rashi),
 /// which requires an accurate birth time and place.
 class ReadingIdentity {
@@ -37,9 +37,23 @@ class ReadingIdentity {
 /// The sidereal Moon sign is a fixed property of the birth, so it is computed
 /// once via `/chart/vedic` and cached in SharedPreferences (keyed on the birth
 /// inputs); later resolutions are instant and work offline.
+/// The reading styles the app supports.
+///
+/// Profiles saved before the "both" option was removed still carry that value,
+/// so every read goes through here and collapses it to western.
+String normalizeTradition(String? value) =>
+    value == 'vedic' ? 'vedic' : 'western';
+
 class SignResolver {
   static const _moonSignKey = 'vedicMoonSign';
   static const _moonSignInputsKey = 'vedicMoonSignInputs';
+
+  /// Forget the cached Moon sign so the next resolve re-fetches `/chart/vedic`.
+  static Future<void> clearCache() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_moonSignKey);
+    await prefs.remove(_moonSignInputsKey);
+  }
 
   static Future<ReadingIdentity> resolve({
     required String tradition,
@@ -48,7 +62,7 @@ class SignResolver {
     String? birthTime,
     String? birthPlace,
   }) async {
-    // Western is also the safe default for 'both' and any unknown value.
+    // Western is the safe default for any value that is not vedic.
     if (tradition != 'vedic') {
       return ReadingIdentity(readingSign: sunSign, system: 'western');
     }

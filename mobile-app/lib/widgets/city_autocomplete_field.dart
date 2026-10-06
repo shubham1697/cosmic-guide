@@ -243,27 +243,31 @@ class _CityAutocompleteFieldState extends State<CityAutocompleteField> {
                 ),
               ],
             ),
+            clipBehavior: Clip.antiAlias,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(vertical: 4),
               shrinkWrap: true,
               itemCount: _options.length,
               separatorBuilder: (_, __) =>
                   Divider(height: 1, color: AppColors.textMuted.withAlpha(30)),
-              itemBuilder: (_, i) => ListTile(
-                dense: true,
-                leading: const Icon(
-                  Icons.place_outlined,
-                  color: AppColors.accent,
-                  size: 18,
-                ),
-                title: Text(
-                  _options[i],
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
+              itemBuilder: (_, i) => Material(
+                type: MaterialType.transparency,
+                child: ListTile(
+                  dense: true,
+                  leading: const Icon(
+                    Icons.place_outlined,
+                    color: AppColors.accent,
+                    size: 18,
                   ),
+                  title: Text(
+                    _options[i],
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  onTap: () => _selectCity(_options[i]),
                 ),
-                onTap: () => _selectCity(_options[i]),
               ),
             ),
           ),

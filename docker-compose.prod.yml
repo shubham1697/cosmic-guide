@@ -1,0 +1,50 @@
+# Production stack. Unlike docker-compose.yml (dev) this publishes nothing but
+# the API, ships no adminer, mounts no source, and takes every secret from the
+# environment. Required vars: POSTGRES_PASSWORD, SECRET_KEY, ADMIN_API_KEY.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Put a TLS-terminating reverse proxy (Caddy/nginx/Cloudflare) in front of the
+# API: the mobile app refuses cleartext HTTP in release builds.
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY}
+      # Unset => /admin/* and the notification broadcast routes return 503.
+      - ADMIN_API_KEY=${ADMIN_API_KEY:?set ADMIN_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - AUDIT_LOG_STDOUT=${AUDIT_LOG_STDOUT:-true}
+      - AI_PROVIDER=${AI_PROVIDER:-auto}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-gemini-2.5-flash-lite}
+      - FCM_CREDENTIALS_PATH=${FCM_CREDENTIALS_PATH:-/app/secrets/fcm.json}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

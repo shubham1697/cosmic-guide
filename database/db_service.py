@@ -18,6 +18,20 @@ from database.config import get_logger
 logger = get_logger(__name__)
 
 
+def _coerce_score(value, default: int = 75) -> int:
+    """Best-effort int for an LLM-supplied score.
+
+    A model occasionally answers "85%" or "N/A". int() would raise inside the
+    save, and the enclosing except would roll back — silently dropping an
+    otherwise perfectly good reading instead of storing it with a sane score.
+    """
+    try:
+        return int(float(str(value).strip().rstrip("%")))
+    except (TypeError, ValueError):
+        logger.warning("Unusable overall_score %r — defaulting to %d", value, default)
+        return default
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Horoscopes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,8 +70,8 @@ def save_horoscope(db: Session, data: dict, commit: bool = True) -> bool:
             love=data.get("love", ""),
             career=data.get("career", ""),
             health=data.get("health", ""),
-            overall_score=int(data.get("overall_score", 75)),
-            lucky_number=int(data.get("lucky_number", 7)),
+            overall_score=_coerce_score(data.get("overall_score", 75)),
+            lucky_number=str(data.get("lucky_number", "7")),
             lucky_color=str(data.get("lucky_color", "Violet")),
             mood=str(data.get("mood", "Thoughtful")),
         ))
@@ -110,7 +124,7 @@ def save_periodic_horoscope(db: Session, data: dict, commit: bool = True) -> boo
             love=data.get("love", ""),
             career=data.get("career", ""),
             health=data.get("health", ""),
-            overall_score=int(data.get("overall_score", 75)),
+            overall_score=_coerce_score(data.get("overall_score", 75)),
             lucky_number=str(data.get("lucky_number", "7")),
             lucky_color=str(data.get("lucky_color", "Violet")),
             mood=str(data.get("mood", "Thoughtful")),

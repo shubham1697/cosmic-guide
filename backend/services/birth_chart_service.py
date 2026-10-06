@@ -7,11 +7,13 @@ birth date, time, and location.
 """
 
 import math
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Optional
 
 import swisseph as swe
 from geopy.geocoders import Nominatim
+from geopy.extra.rate_limiter import RateLimiter
 from timezonefinder import TimezoneFinder
 from zoneinfo import ZoneInfo
 
@@ -24,16 +26,21 @@ logger = get_logger(__name__)
 # Use built-in ephemeris (no external data files needed)
 swe.set_ephe_path("")
 
-# Geocoder (lazy singleton)
+# Geocoder (lazy singleton) + rate-limited call + place→coords cache
 _geocoder: Optional[Nominatim] = None
+_geocode_fn = None  # RateLimiter-wrapped geocode callable (Nominatim ToS: ≤1 req/s)
+# Keys are caller-supplied place strings, so the cache must be bounded.
+_GEOCODE_CACHE_MAX = 2048
+_geocode_cache: OrderedDict[str, tuple[float, float]] = OrderedDict()
 _tz_finder: Optional[TimezoneFinder] = None
 
 
-def _get_geocoder() -> Nominatim:
-    global _geocoder
-    if _geocoder is None:
+def _get_geocode_fn():
+    global _geocoder, _geocode_fn
+    if _geocode_fn is None:
         _geocoder = Nominatim(user_agent="cosmicguide-astro")
-    return _geocoder
+        _geocode_fn = RateLimiter(_geocoder.geocode, min_delay_seconds=1.0)
+    return _geocode_fn
 
 
 def _get_tz_finder() -> TimezoneFinder:
@@ -78,12 +85,52 @@ def _format_dms(degrees: float) -> str:
     return f"{d}°{m:02d}'{s:02d}\""
 
 
-def geocode_place(place: str) -> Optional[tuple[float, float]]:
-    """Return (latitude, longitude) for a place name, or None."""
+def parse_birth_time(birth_time: Optional[str]) -> Optional[tuple[int, int]]:
+    """Parse "HH:MM" into (hour, minute), or None when unusable.
+
+    None means *no usable birth time*, which is different from midnight. The
+    caller must then cast the chart at the 12:00 default AND report the
+    ascendant as estimated — a blank, malformed or out-of-range time must never
+    yield a house cusp presented as exact.
+    """
+    if not birth_time:
+        return None
+    parts = str(birth_time).strip().split(":")
+    if len(parts) < 2:
+        logger.warning("Unusable birth_time %r — treating as absent", birth_time)
+        return None
     try:
-        location = _get_geocoder().geocode(place, timeout=10)
+        hour, minute = int(parts[0]), int(parts[1])
+    except ValueError:
+        logger.warning("Unusable birth_time %r — treating as absent", birth_time)
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        logger.warning("Out-of-range birth_time %r — treating as absent", birth_time)
+        return None
+    return hour, minute
+
+
+def geocode_place(place: str) -> Optional[tuple[float, float]]:
+    """Return (latitude, longitude) for a place name, or None.
+
+    Successful lookups are cached (the same place is re-resolved many times per
+    request); cache misses are throttled to Nominatim's 1 req/s ToS limit.
+    """
+    if not place:
+        return None
+    key = place.strip().lower()
+    cached = _geocode_cache.get(key)
+    if cached is not None:
+        _geocode_cache.move_to_end(key)
+        return cached
+    try:
+        location = _get_geocode_fn()(place, timeout=10)
         if location:
-            return (location.latitude, location.longitude)
+            coords = (location.latitude, location.longitude)
+            _geocode_cache[key] = coords   # cache successes only — transient failures retry
+            while len(_geocode_cache) > _GEOCODE_CACHE_MAX:
+                _geocode_cache.popitem(last=False)   # evict least-recently-used
+            return coords
     except Exception as e:
         logger.warning("Geocoding failed for '%s': %s", place, e)
     return None
@@ -130,16 +177,10 @@ def calculate_birth_chart(
     except ValueError:
         raise ValueError(f"Invalid birth_date format: {birth_date}. Use YYYY-MM-DD.")
 
-    # Parse birth time
-    if birth_time:
-        try:
-            parts = birth_time.split(":")
-            hour, minute = int(parts[0]), int(parts[1])
-        except (ValueError, IndexError):
-            hour, minute = 12, 0
-            logger.warning("Invalid birth_time '%s', defaulting to 12:00", birth_time)
-    else:
-        hour, minute = 12, 0
+    # Parse birth time. An unusable value is treated as absent, so the chart is
+    # cast at noon and the ascendant is reported as an estimate.
+    parsed_time = parse_birth_time(birth_time)
+    hour, minute = parsed_time if parsed_time else (12, 0)
 
     # Geocode birth place
     lat, lon = 0.0, 0.0
@@ -236,7 +277,9 @@ def calculate_birth_chart(
     # Houses/ascendant need both a birth time and successfully geocoded
     # coordinates. A place that failed to geocode leaves lat/lon at 0°N 0°E,
     # which would otherwise yield a bogus (but real-looking) ascendant.
-    has_houses = birth_time is not None and geocoded
+    # A blank or unusable birth time counts as absent: the chart is then cast at
+    # the 12:00 default, so the ascendant is an estimate and must say so.
+    has_houses = parsed_time is not None and geocoded
     houses = []
     ascendant_lon = None
 
@@ -332,7 +375,7 @@ def calculate_birth_chart(
     chart = {
         "birth_info": {
             "date": birth_date,
-            "time": birth_time or "12:00 (default)",
+            "time": birth_time if parsed_time else "12:00 (default)",
             "place": birth_place or "Unknown",
             "latitude": round(lat, 4),
             "longitude": round(lon, 4),
@@ -423,8 +466,15 @@ def calculate_current_transits(sidereal: bool = False, when: Optional[datetime] 
         swe.set_sid_mode(swe.SIDM_LAHIRI, 0, 0)
         calc_flags |= swe.FLG_SIDEREAL
 
+    # Vedic uses the seven grahas + the lunar nodes; Western adds the outer planets.
+    planet_ids = (
+        {name: PLANET_IDS[name] for name in VEDIC_GRAHAS}
+        if sidereal
+        else PLANET_IDS
+    )
+
     transits = []
-    for name, planet_id in PLANET_IDS.items():
+    for name, planet_id in planet_ids.items():
         result, _flags = swe.calc_ut(jd, planet_id, calc_flags)
         longitude = result[0]
         speed = result[3]
@@ -441,6 +491,21 @@ def calculate_current_transits(sidereal: bool = False, when: Optional[datetime] 
             "degree_display": _format_dms(_degree_in_sign(longitude)),
             "is_retrograde": is_retrograde,
         })
+
+    if sidereal:
+        node_res, _ = swe.calc_ut(jd, swe.MEAN_NODE, calc_flags)
+        rahu_lon = node_res[0] % 360
+        ketu_lon = (rahu_lon + 180) % 360
+        for node_name, node_lon in (("Rahu", rahu_lon), ("Ketu", ketu_lon)):
+            transits.append({
+                "name": node_name,
+                "symbol": PLANET_SYMBOLS[node_name],
+                "longitude": round(node_lon, 4),
+                "sign": _sign_from_longitude(node_lon),
+                "degree_in_sign": round(_degree_in_sign(node_lon), 2),
+                "degree_display": _format_dms(_degree_in_sign(node_lon)),
+                "is_retrograde": True,  # nodes are always retrograde
+            })
 
     return transits
 

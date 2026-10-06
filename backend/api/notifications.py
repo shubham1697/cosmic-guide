@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import DeviceToken
 from logger import get_logger
+from security import AuthedUser, require_admin, require_user
 from schemas import (
     DeviceTokenRegister,
     NotificationPreferences,
@@ -21,7 +22,11 @@ router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 @router.post("/register")
-def register_device(payload: DeviceTokenRegister, db: Session = Depends(get_db)):
+def register_device(
+    payload: DeviceTokenRegister,
+    caller: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_db),
+):
     """Upsert an FCM device token (called by the app after it obtains a token)."""
     logger.info("→ POST /notifications/register platform=%s sign=%s",
                 payload.platform, payload.zodiac_sign)
@@ -29,6 +34,7 @@ def register_device(payload: DeviceTokenRegister, db: Session = Depends(get_db))
     existing = db.query(DeviceToken).filter(DeviceToken.token == payload.token).first()
 
     if existing:
+        existing.firebase_uid = caller.uid
         existing.platform = payload.platform
         existing.zodiac_sign = payload.zodiac_sign
         existing.tradition = payload.tradition
@@ -42,6 +48,7 @@ def register_device(payload: DeviceTokenRegister, db: Session = Depends(get_db))
     else:
         db.add(DeviceToken(
             token=payload.token,
+            firebase_uid=caller.uid,
             platform=payload.platform,
             zodiac_sign=payload.zodiac_sign,
             tradition=payload.tradition,
@@ -91,9 +98,14 @@ def update_preferences(payload: NotificationPreferences, db: Session = Depends(g
     return {"status": "ok"}
 
 
-@router.post("/test")
+@router.post("/test", dependencies=[Depends(require_admin)])
 def send_test(payload: TestPushRequest):
-    """Send a one-off test push to a token (dev aid)."""
+    """Send a one-off test push to a token (operator dev aid).
+
+    Admin-gated: the caller supplies the title and body, so leaving it open
+    would let anyone holding a device token push arbitrary (e.g. phishing)
+    content to that device.
+    """
     logger.info("→ POST /notifications/test")
     sent, _prune = notification_service.send_to_token(
         payload.token,
@@ -106,9 +118,12 @@ def send_test(payload: TestPushRequest):
     return {"sent": sent, "fcm_enabled": notification_service.is_enabled()}
 
 
-@router.post("/run-daily")
+@router.post("/run-daily", dependencies=[Depends(require_admin)])
 def run_daily(db: Session = Depends(get_db)):
-    """Manually trigger the daily reminder job now (dev / ops aid)."""
+    """Manually trigger the daily reminder job now (operator aid).
+
+    Admin-gated: this broadcasts to every registered device.
+    """
     logger.info("→ POST /notifications/run-daily")
     result = notification_service.send_daily_horoscope_reminders(db)
     logger.info("← POST /notifications/run-daily %s", result)

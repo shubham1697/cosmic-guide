@@ -4,7 +4,21 @@ import 'package:flutter/foundation.dart';
 import '../models/zodiac.dart';
 
 class ApiService {
-  // Optional override for physical devices:
+  /// Production API root, including scheme and `/api/v1`. Set at build time:
+  ///   flutter build appbundle --dart-define=API_BASE_URL=https://api.example.com/api/v1
+  /// Falls back to [_fallbackProdBaseUrl] so a release build never silently
+  /// talks to localhost. Must be HTTPS — release builds block cleartext.
+  static const String _apiBaseUrlOverride = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: '',
+  );
+
+  /// Edit this once the backend has a real hostname, or keep passing
+  /// --dart-define=API_BASE_URL at build time.
+  static const String _fallbackProdBaseUrl =
+      'https://api.cosmicguide.app/api/v1';
+
+  // Optional override for physical devices in development:
   // flutter run --dart-define=API_HOST=192.168.29.123
   static const String _apiHostOverride = String.fromEnvironment(
     'API_HOST',
@@ -13,6 +27,12 @@ class ApiService {
 
   // Local backend (Docker): Android emulator must use 10.0.2.2.
   static String get _baseUrl {
+    if (_apiBaseUrlOverride.isNotEmpty) {
+      return _apiBaseUrlOverride;
+    }
+    if (kReleaseMode) {
+      return _fallbackProdBaseUrl;
+    }
     if (_apiHostOverride.isNotEmpty) {
       return 'http://$_apiHostOverride:8000/api/v1';
     }
@@ -33,6 +53,20 @@ class ApiService {
 
   // Render free tier can take 15-30s to cold-start; use a generous timeout.
   static const _timeout = Duration(seconds: 20);
+
+  /// Supplies the Firebase ID token for authenticated calls. Wired to
+  /// `AuthService.idToken` in main() so this layer stays testable.
+  static Future<String?> Function()? tokenProvider;
+
+  static Future<Map<String, String>> _authHeaders({bool json = false}) async {
+    final headers = <String, String>{};
+    if (json) headers['Content-Type'] = 'application/json';
+    final token = await tokenProvider?.call();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
 
   // ── Request de-duplication + short-lived cache ───────────────────────────
   // The Home, Chart and Vedic tabs all live in an IndexedStack (they stay alive)
@@ -73,6 +107,10 @@ class ApiService {
           _inFlight.remove(key);
         });
   }
+
+  /// Drop every cached response so the next read hits the network.
+  /// In-flight requests are left alone; they complete normally.
+  static void clearCache() => _responseCache.clear();
 
   /// Fetch today's horoscope for a sign. Returns null on failure.
   ///
@@ -162,26 +200,29 @@ class ApiService {
       buf.write('&birthPlace=${Uri.encodeQueryComponent(birthPlace!)}');
     }
     final url = buf.toString();
-    return _dedup<({List<ForecastPoint> points, ForecastPoint? bestDay})>(url, () async {
-      try {
-        final response = await http
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 30));
-        if (response.statusCode == 200) {
-          final data = json.decode(response.body) as Map<String, dynamic>;
-          final points = (data['forecast'] as List<dynamic>? ?? const [])
-              .map((e) => ForecastPoint.fromJson(e as Map<String, dynamic>))
-              .toList();
-          if (points.isEmpty) return null;
-          final bd = data['bestDay'];
-          final bestDay = bd is Map<String, dynamic>
-              ? ForecastPoint.fromJson(bd)
-              : null;
-          return (points: points, bestDay: bestDay);
-        }
-      } catch (_) {}
-      return null;
-    });
+    return _dedup<({List<ForecastPoint> points, ForecastPoint? bestDay})>(
+      url,
+      () async {
+        try {
+          final response = await http
+              .get(Uri.parse(url))
+              .timeout(const Duration(seconds: 30));
+          if (response.statusCode == 200) {
+            final data = json.decode(response.body) as Map<String, dynamic>;
+            final points = (data['forecast'] as List<dynamic>? ?? const [])
+                .map((e) => ForecastPoint.fromJson(e as Map<String, dynamic>))
+                .toList();
+            if (points.isEmpty) return null;
+            final bd = data['bestDay'];
+            final bestDay = bd is Map<String, dynamic>
+                ? ForecastPoint.fromJson(bd)
+                : null;
+            return (points: points, bestDay: bestDay);
+          }
+        } catch (_) {}
+        return null;
+      },
+    );
   }
 
   /// Draw a random tarot card. Returns null on failure.
@@ -489,7 +530,7 @@ class ApiService {
       final response = await http
           .post(
             Uri.parse('$_baseUrl/notifications/register'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await _authHeaders(json: true),
             body: json.encode({
               'token': token,
               'platform': platform,
@@ -535,7 +576,7 @@ class ApiService {
       final response = await http
           .put(
             Uri.parse('$_baseUrl/notifications/preferences'),
-            headers: {'Content-Type': 'application/json'},
+            headers: await _authHeaders(json: true),
             body: json.encode({
               'token': token,
               'dailyHoroscopeEnabled': dailyHoroscopeEnabled,
@@ -576,5 +617,78 @@ class ApiService {
       debugPrint('sendTestPush error: $e');
     }
     return false;
+  }
+
+  // ── Signed-in profile ────────────────────────────────────────────────────
+
+  /// Fetch the synced profile, creating it server-side on first call.
+  /// Returns null when offline or unauthenticated — callers fall back to the
+  /// local copy so the app still works.
+  static Future<Map<String, dynamic>?> fetchProfile() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_baseUrl/users/me'), headers: await _authHeaders())
+          .timeout(_timeout);
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      debugPrint('fetchProfile: HTTP ${response.statusCode}');
+    } catch (e) {
+      debugPrint('fetchProfile error: $e');
+    }
+    return null;
+  }
+
+  /// Push local profile fields to the server. Omitted values are left as-is.
+  static Future<bool> updateProfile({
+    String? name,
+    String? birthDate,
+    String? birthTime,
+    String? birthPlace,
+    String? zodiacSign,
+    String? tradition,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (birthDate != null && birthDate.isNotEmpty) 'birthDate': birthDate,
+        if (birthTime != null && birthTime.isNotEmpty) 'birthTime': birthTime,
+        if (birthPlace != null && birthPlace.isNotEmpty)
+          'birthPlace': birthPlace,
+        if (zodiacSign != null && zodiacSign.isNotEmpty)
+          'zodiacSign': zodiacSign,
+        if (tradition != null && tradition.isNotEmpty) 'tradition': tradition,
+      };
+      if (payload.isEmpty) return true;
+
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/users/me'),
+            headers: await _authHeaders(json: true),
+            body: json.encode(payload),
+          )
+          .timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('updateProfile error: $e');
+      return false;
+    }
+  }
+
+  /// Erase the server-side account. Must succeed before deleting the Firebase
+  /// credential, otherwise the row is stranded with no way to authenticate.
+  static Future<bool> deleteProfile() async {
+    try {
+      final response = await http
+          .delete(
+            Uri.parse('$_baseUrl/users/me'),
+            headers: await _authHeaders(),
+          )
+          .timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('deleteProfile error: $e');
+      return false;
+    }
   }
 }

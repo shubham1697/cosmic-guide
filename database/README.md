@@ -129,7 +129,7 @@ SELECT COUNT(*) FROM stories;           -- expect 6+
 ### Option C: Via the backend API (if running)
 
 ```bash
-curl http://localhost:8000/admin/content-status
+curl -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8000/admin/content-status
 ```
 
 ---

@@ -3,12 +3,9 @@ uvicorn[standard]==0.34.*
 sqlalchemy==2.0.*
 pydantic[email]==2.11.*
 python-dotenv==1.1.*
-google-genai>=1.0
-openai>=1.0
+google-genai>=1.0,<2
+openai>=1.0,<2
 psycopg2-binary==2.9.*
-python-jose[cryptography]==3.3.*
-passlib[bcrypt]==1.7.*
-python-multipart==0.0.*
 pyswisseph==2.10.*
 geopy==2.4.*
 timezonefinder==8.2.*

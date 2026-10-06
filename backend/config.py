@@ -1,4 +1,5 @@
 import os
+import secrets
 import sys
 from dotenv import load_dotenv
 
@@ -13,7 +14,10 @@ def _ensure_shared_importable() -> None:
     """
     here = os.path.dirname(os.path.abspath(__file__))
     for _ in range(5):
-        if os.path.isdir(os.path.join(here, "shared")):
+        # Match the directory that actually CONTAINS the shared package (its
+        # llm_config module), not just any empty ``shared/`` dir that could
+        # shadow the real one (e.g. a leftover stub beside this file).
+        if os.path.isfile(os.path.join(here, "shared", "llm_config.py")):
             if here not in sys.path:
                 sys.path.insert(0, here)
             return
@@ -35,7 +39,13 @@ class Settings:
     API_PREFIX: str = "/api/v1"
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://cosmicguide:cosmicguide@localhost:5432/cosmicguide")
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production")
+    # No hard-coded fallback secret: fall back to a random per-process key when
+    # SECRET_KEY is unset (set it explicitly in production once auth ships).
+    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+    # Shared secret for the operator-only /admin/* and notification broadcast
+    # routes. Unset (the default) keeps them disabled rather than open, since
+    # they spend LLM budget and can push to every registered device.
+    ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "")
     GEMINI_API_KEY: str = _llm.gemini_api_key
 
     # Gemini model — gemini-2.5-flash-lite is fast, free-tier friendly
@@ -50,7 +60,12 @@ class Settings:
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
-    CORS_ORIGINS: list = ["*"]
+    # Comma-separated origins, e.g. "https://cosmicguide.app,https://admin.…".
+    # Default "*" suits the mobile client (browsers are not the audience);
+    # narrow it in production if the API is ever called from a web page.
+    CORS_ORIGINS: list = [
+        o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",") if o.strip()
+    ] or ["*"]
 
     # Local Ollama instance for content generation
     OLLAMA_BASE_URL: str = _llm.ollama_base_url
@@ -76,7 +91,19 @@ class Settings:
 
     # Logging — set LOG_LEVEL env var on Render to control verbosity
     # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+    # ── Rate limiting ──
+    # In-process fixed window, so it only holds for a single worker (already
+    # required by the scheduler). Use a shared store before scaling out.
+    RATE_LIMIT_ENABLED: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+    # Requests per minute per client IP for ordinary reads.
+    RATE_LIMIT_DEFAULT: int = int(os.getenv("RATE_LIMIT_DEFAULT", "120"))
+    # Tighter budget for routes that can spend an LLM call on a cache miss.
+    RATE_LIMIT_LLM: int = int(os.getenv("RATE_LIMIT_LLM", "20"))
+    # Only enable behind a proxy you control: clients can forge X-Forwarded-For
+    # to get a fresh bucket per request and walk straight past the limiter.
+    TRUST_PROXY_HEADERS: bool = os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true"
 
 
 settings = Settings()

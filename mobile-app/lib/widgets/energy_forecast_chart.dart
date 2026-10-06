@@ -65,8 +65,18 @@ class _ForecastPainter extends CustomPainter {
   static const double _minY = 40;
   static const double _maxY = 100;
   static const List<String> _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
 
   _ForecastPainter({
@@ -207,7 +217,10 @@ class _ForecastPainter extends CustomPainter {
 
     // X labels: Today, midpoint, and the last day.
     final tp = TextPainter(textDirection: TextDirection.ltr);
-    final labels = <int, String>{0: 'Today', n - 1: _shortDate(points[n - 1].date)};
+    final labels = <int, String>{
+      0: 'Today',
+      n - 1: _shortDate(points[n - 1].date),
+    };
     if (n > 6) labels[n ~/ 2] = _shortDate(points[n ~/ 2].date);
     labels.forEach((i, text) {
       tp.text = TextSpan(

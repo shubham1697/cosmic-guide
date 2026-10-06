@@ -712,4 +712,3 @@ const List<TarotCard> tarotDeck = [
         'Greed, materialism, or financial mismanagement. Success at the expense of relationships or health. Rebalance your priorities — wealth without well-being is hollow.',
   ),
 ];
-

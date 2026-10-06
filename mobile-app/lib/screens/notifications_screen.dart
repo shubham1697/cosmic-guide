@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../services/notification_service.dart';
+import '../services/sign_resolver.dart';
 import '../widgets/starry_background.dart';
 
 /// Settings screen for push notifications. Lets the user toggle the daily
@@ -24,7 +25,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   TimeOfDay _reminderTime = const TimeOfDay(hour: 8, minute: 0);
 
   String _sign = 'Aries';
-  String _tradition = 'both';
+  String _tradition = 'western';
   String _birthDate = '';
   String _birthTime = '';
   String _birthPlace = '';
@@ -43,7 +44,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (!mounted) return;
     setState(() {
       _sign = prefs.getString('userSign') ?? 'Aries';
-      _tradition = prefs.getString('tradition') ?? 'both';
+      _tradition = normalizeTradition(prefs.getString('tradition'));
       _birthDate = prefs.getString('birthDate') ?? '';
       _birthTime = prefs.getString('birthTime') ?? '';
       _birthPlace = prefs.getString('birthPlace') ?? '';
@@ -203,11 +204,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildReminderCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           SwitchListTile(

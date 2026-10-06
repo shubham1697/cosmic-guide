@@ -157,7 +157,7 @@ def generate_horoscopes(db, today: date, force: bool = False) -> int:
                 career=data.get("career", ""),
                 health=data.get("health", ""),
                 overall_score=int(data.get("overall_score", 75)),
-                lucky_number=int(data.get("lucky_number", 7)),
+                lucky_number=str(data.get("lucky_number", "7")),
                 lucky_color=str(data.get("lucky_color", "blue")),
                 mood=str(data.get("mood", "positive")),
             ))

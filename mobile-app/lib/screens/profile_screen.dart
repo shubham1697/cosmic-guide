@@ -1,15 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/sign_resolver.dart';
 import '../services/history_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
 import 'astro_glossary_screen.dart';
+import 'help_screen.dart';
 import 'notifications_screen.dart';
+import 'premium_screen.dart';
 import 'reading_history_screen.dart';
+import 'settings_screen.dart';
 import 'share_card_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -34,16 +41,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _birthDate = '';
   String _birthTime = '';
   String _birthPlace = '';
-  String _tradition = 'both';
+  String _tradition = 'western';
 
   /// Headline sign for the chosen tradition: the tropical Sun sign for
-  /// Western/Both, or the sidereal Moon sign (Janma Rashi) when reading Vedic.
+  /// Western, or the sidereal Moon sign (Janma Rashi) when reading Vedic.
   String _readingSign = '';
   String _readingSystem = 'western';
-
-  /// The sidereal Moon sign (Janma Rashi), resolved for "both" readers so the
-  /// profile can show the Sun sign and the Janma Rashi side by side.
-  String _moonSign = '';
 
   /// Cached reading stats so the stats row shows the last-known values
   /// instantly (no flash of zeros) while fresh numbers load.
@@ -64,7 +67,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _birthDate = prefs.getString('birthDate') ?? '';
         _birthTime = prefs.getString('birthTime') ?? '';
         _birthPlace = prefs.getString('birthPlace') ?? '';
-        _tradition = prefs.getString('tradition') ?? 'both';
+        _tradition = normalizeTradition(prefs.getString('tradition'));
       });
     }
     await _resolveReadingSign();
@@ -80,24 +83,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       birthTime: _birthTime.isNotEmpty ? _birthTime : null,
       birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
     );
-    // "Both" readers also see their Janma Rashi below the Sun sign, so resolve
-    // the sidereal Moon sign alongside the primary (Western) identity.
-    String moon = '';
-    if (_tradition == 'both') {
-      final vedic = await SignResolver.resolve(
-        tradition: 'vedic',
-        sunSign: _sign,
-        birthDate: _birthDate.isNotEmpty ? _birthDate : null,
-        birthTime: _birthTime.isNotEmpty ? _birthTime : null,
-        birthPlace: _birthPlace.isNotEmpty ? _birthPlace : null,
-      );
-      if (vedic.system == 'vedic') moon = vedic.readingSign;
-    }
     if (!mounted) return;
     setState(() {
       _readingSign = identity.readingSign;
       _readingSystem = identity.system;
-      _moonSign = moon;
     });
   }
 
@@ -140,6 +129,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               await prefs.setString('birthTime', birthTime);
               await prefs.setString('birthPlace', birthPlace);
               await prefs.setString('tradition', tradition);
+              // Keep the synced copy in step so another device restores it.
+              unawaited(
+                ApiService.updateProfile(
+                  name: name,
+                  zodiacSign: sign,
+                  birthDate: birthDate,
+                  birthTime: birthTime,
+                  birthPlace: birthPlace,
+                  tradition: tradition,
+                ),
+              );
               if (mounted) {
                 setState(() {
                   _name = name;
@@ -166,14 +166,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     final traits = _getTraits(displaySign);
     final isVedicReading = _readingSystem == 'vedic';
-    // "Both" readers get a second line with their Janma Rashi (Moon sign).
-    final showBothSigns = _tradition == 'both' && _moonSign.isNotEmpty;
-    final moonSign = showBothSigns
-        ? zodiacSigns.firstWhere(
-            (z) => z.name == _moonSign,
-            orElse: () => zodiacSigns.first,
-          )
-        : null;
 
     return StarryBackground(
       child: SafeArea(
@@ -193,34 +185,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              if (moonSign != null) ...[
-                Text(
-                  '☉ ${sign.name} ${sign.symbol} · Sun sign',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
+              Text(
+                isVedicReading
+                    ? '${sign.name} ${sign.symbol} · Janma Rashi (Moon)'
+                    : '${sign.name} ${sign.symbol} | ${sign.dateRange}',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 14,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  '☽ ${moonSign.name} ${moonSign.symbol} · Janma Rashi',
-                  style: const TextStyle(
-                    color: AppColors.mysticTeal,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ] else
-                Text(
-                  isVedicReading
-                      ? '${sign.name} ${sign.symbol} · Janma Rashi (Moon)'
-                      : '${sign.name} ${sign.symbol} | ${sign.dateRange}',
-                  style: const TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 14,
-                  ),
-                ),
+              ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: _openEditSheet,
@@ -281,9 +254,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildTraditionBadge() {
     final (IconData icon, Color color, String label) = switch (_tradition) {
-      'western' => (Icons.wb_sunny_outlined, AppColors.accent, 'Western'),
       'vedic' => (Icons.spa_outlined, AppColors.mysticTeal, 'Vedic'),
-      _ => (Icons.all_inclusive, AppColors.purple, 'Both'),
+      _ => (Icons.wb_sunny_outlined, AppColors.accent, 'Western'),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -568,47 +540,203 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildPremiumCard() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: AppColors.gradientGold,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.workspace_premium,
-            color: AppColors.primary,
-            size: 36,
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Upgrade to Premium',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                    fontSize: 16,
+    return GestureDetector(
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (_) => const PremiumScreen())),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: AppColors.gradientGold,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.workspace_premium,
+              color: AppColors.primary,
+              size: 36,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Upgrade to Premium',
+                    style: GoogleFonts.poppins(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      fontSize: 16,
+                    ),
                   ),
-                ),
-                const Text(
-                  'Unlock advanced reports & unlimited readings',
-                  style: TextStyle(color: AppColors.secondary, fontSize: 12),
-                ),
-              ],
+                  const Text(
+                    'Unlock advanced reports & unlimited readings',
+                    style: TextStyle(color: AppColors.secondary, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: AppColors.primary,
+              size: 16,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await _confirm(
+      title: 'Sign out?',
+      message:
+          'Readings saved on this device are removed when you sign out, so the '
+          'next person to sign in cannot see them. Your profile is restored '
+          'when you sign back in.',
+      confirmLabel: 'Sign out',
+    );
+    if (!confirmed) return;
+    await AuthService.signOut();
+    // AppEntry's auth listener clears local data and returns to sign-in.
+  }
+
+  Future<void> _deleteAccount() async {
+    final confirmed = await _confirm(
+      title: 'Delete your account?',
+      message:
+          'This permanently erases your profile, birth details and sign-in. '
+          'It cannot be undone.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    // Prove identity first. Firebase rejects deletion on a stale sign-in, and
+    // doing this after the server delete would strand the user with their data
+    // gone but the account still live.
+    String? password;
+    if (AuthService.usesPassword) {
+      password = await _askPassword();
+      if (password == null || !mounted) return;
+    }
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final reauth = await AuthService.reauthenticate(password: password);
+    if (!reauth.ok) {
+      if (reauth.error != null) {
+        messenger.showSnackBar(SnackBar(content: Text(reauth.error!)));
+      }
+      return;
+    }
+
+    // Server copy first: deleting the credential before it would leave the
+    // stored profile with no way to authenticate to it again.
+    final serverDeleted = await ApiService.deleteProfile();
+    if (!serverDeleted) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Could not reach the server. Please try again.'),
+        ),
+      );
+      return;
+    }
+
+    final result = await AuthService.deleteAccount();
+    if (!result.ok && result.error != null) {
+      messenger.showSnackBar(SnackBar(content: Text(result.error!)));
+      return;
+    }
+    await AuthService.signOut();
+  }
+
+  Future<String?> _askPassword() async {
+    final controller = TextEditingController();
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.secondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Confirm your password',
+          style: TextStyle(color: AppColors.textPrimary),
+        ),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.textPrimary),
+          decoration: const InputDecoration(hintText: 'Password'),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textMuted),
             ),
           ),
-          const Icon(
-            Icons.arrow_forward_ios,
-            color: AppColors.primary,
-            size: 16,
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text(
+              'Confirm',
+              style: TextStyle(
+                color: AppColors.love,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
     );
+    controller.dispose();
+    return (entered == null || entered.isEmpty) ? null : entered;
+  }
+
+  Future<bool> _confirm({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    bool destructive = false,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.secondary,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          title,
+          style: const TextStyle(color: AppColors.textPrimary),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: AppColors.textMuted, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textMuted),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              confirmLabel,
+              style: TextStyle(
+                color: destructive ? AppColors.love : AppColors.accent,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   Widget _buildMenuItems(BuildContext context) {
@@ -657,8 +785,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (mounted) setState(() {});
         },
       ),
-      _MenuItem(Icons.settings_outlined, 'Settings', AppColors.textSecondary),
-      _MenuItem(Icons.help_outline, 'Help & Support', AppColors.mysticTeal),
+      _MenuItem(
+        Icons.settings_outlined,
+        'Settings',
+        AppColors.textSecondary,
+        onTap: () async {
+          await Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+          // Settings can wipe or reset local data, so re-read it on return.
+          if (mounted) await _loadExtras();
+        },
+      ),
+      _MenuItem(
+        Icons.help_outline,
+        'Help & Support',
+        AppColors.mysticTeal,
+        onTap: () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const HelpScreen())),
+      ),
+      _MenuItem(
+        Icons.logout,
+        'Sign out',
+        AppColors.textSecondary,
+        onTap: _signOut,
+      ),
+      _MenuItem(
+        Icons.person_remove_outlined,
+        'Delete account',
+        AppColors.love,
+        onTap: _deleteAccount,
+      ),
     ];
 
     return Column(
@@ -669,22 +827,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: AppColors.card,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: ListTile(
-            onTap: item.onTap,
-            leading: Icon(item.icon, color: item.color),
-            title: Text(
-              item.label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 15,
+          child: Material(
+            type: MaterialType.transparency,
+            child: ListTile(
+              onTap: item.onTap,
+              leading: Icon(item.icon, color: item.color),
+              title: Text(
+                item.label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                ),
               ),
-            ),
-            trailing: const Icon(
-              Icons.chevron_right,
-              color: AppColors.textMuted,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+              trailing: const Icon(
+                Icons.chevron_right,
+                color: AppColors.textMuted,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
           ),
         );
@@ -997,7 +1158,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Zodiac auto-updated to $_selectedSign',
+                    'Zodiac set to $_selectedSign',
                     style: const TextStyle(
                       color: AppColors.accent,
                       fontSize: 12,
@@ -1050,41 +1211,46 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 _traditionChip('western', 'Western'),
                 _traditionChip('vedic', 'Vedic'),
-                _traditionChip('both', 'Both'),
               ],
             ),
             const SizedBox(height: 20),
-            if (_birthDate == null) ...[
-              _label('Zodiac Sign'),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.card,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.textMuted.withAlpha(51)),
-                ),
-                child: DropdownButton<String>(
-                  value: _selectedSign,
-                  isExpanded: true,
-                  dropdownColor: AppColors.card,
-                  underline: const SizedBox(),
-                  items: zodiacSigns.map((z) {
-                    return DropdownMenuItem(
-                      value: z.name,
-                      child: Text(
-                        '${z.symbol}  ${z.name}',
-                        style: const TextStyle(color: AppColors.textPrimary),
-                      ),
-                    );
-                  }).toList(),
-                  onChanged: (v) {
-                    if (v != null) setState(() => _selectedSign = v);
-                  },
-                ),
+            _label('Zodiac Sign'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.textMuted.withAlpha(51)),
               ),
-              const SizedBox(height: 20),
+              child: DropdownButton<String>(
+                value: _selectedSign,
+                isExpanded: true,
+                dropdownColor: AppColors.card,
+                underline: const SizedBox(),
+                items: zodiacSigns.map((z) {
+                  return DropdownMenuItem(
+                    value: z.name,
+                    child: Text(
+                      '${z.symbol}  ${z.name}',
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (v) {
+                  if (v != null) setState(() => _selectedSign = v);
+                },
+              ),
+            ),
+            if (_birthDate != null) ...[
+              const SizedBox(height: 6),
+              const Text(
+                'Set from your birth date. Change it if you were born on a '
+                'cusp and identify with the other sign.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
             ],
+            const SizedBox(height: 20),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

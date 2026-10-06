@@ -6,11 +6,13 @@ import '../data/zodiac_signs_data.dart';
 import '../models/zodiac.dart';
 import '../services/api_service.dart';
 import '../services/history_service.dart';
-import '../services/sign_resolver.dart';
+import '../services/notification_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/energy_forecast_chart.dart';
+import 'discover_screen.dart';
 import 'fortune_screen.dart';
 import 'horoscope_screen.dart';
+import 'notifications_screen.dart';
 import 'tarot_screen.dart';
 import 'story_detail_screen.dart';
 
@@ -29,13 +31,11 @@ class HomeScreen extends StatefulWidget {
   /// reading fell back to Western. Drives the "add birth details" nudge.
   final bool needsBirthDetailsForVedic;
 
-  /// The user's chosen tradition: 'both' (default), 'western', or 'vedic'.
-  /// When 'both' and birth details are known, Home shows a Western/Vedic
-  /// compare toggle so both readings sit side by side.
+  /// The user's chosen tradition: 'western' (default) or 'vedic'. Changing it
+  /// reloads the reading.
   final String tradition;
 
-  /// Birth details, used to resolve the sidereal Moon sign (Janma Rashi) for
-  /// the Vedic side of the "both" compare view.
+  /// Birth details, used to personalise the daily reading and the forecast.
   final String? birthDate;
   final String? birthTime;
   final String? birthPlace;
@@ -53,7 +53,7 @@ class HomeScreen extends StatefulWidget {
     required this.readingSign,
     this.system = 'western',
     this.needsBirthDetailsForVedic = false,
-    this.tradition = 'both',
+    this.tradition = 'western',
     this.birthDate,
     this.birthTime,
     this.birthPlace,
@@ -73,18 +73,13 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _dailyTarotReversed = false;
   bool _isLoading = true;
 
-  // Vedic Moon-rashi reading for the "both" compare toggle, loaded lazily when
-  // tradition == 'both' and birth details are known.
-  HoroscopeData? _vedicHoroscope;
-  String _vedicSign = '';
-  bool _loadingVedic = false;
-
-  // Which reading the compare toggle currently shows: 'western' | 'vedic'.
-  String _selectedSystem = 'western';
-
   /// 7-day forecast points per system ('western'/'vedic') for the daily-card
   /// sparkline. Empty list = fetched but unavailable; missing key = not fetched.
   final Map<String, List<ForecastPoint>> _forecastBySystem = {};
+
+  /// Drives the dot on the notification bell: off means the user has never
+  /// set up their daily reminder.
+  bool _remindersOn = true;
 
   @override
   void initState() {
@@ -93,6 +88,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _isLoading = widget.initialHoroscope == null;
     _loadData();
     _loadDailyTarot();
+    _loadReminderState();
   }
 
   @override
@@ -114,6 +110,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _forecastBySystem.clear();
       _loadData();
     }
+  }
+
+  Future<void> _loadReminderState() async {
+    final enabled = await NotificationService.isEnabled();
+    if (mounted) setState(() => _remindersOn = enabled);
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));
+    await _loadReminderState();
   }
 
   Future<void> _loadDailyTarot() async {
@@ -168,38 +176,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
-  // ── "Both" compare state ────────────────────────────────────────────────
-  bool get _hasBirthData =>
-      (widget.birthDate?.isNotEmpty ?? false) &&
-      (widget.birthTime?.isNotEmpty ?? false) &&
-      (widget.birthPlace?.isNotEmpty ?? false);
-
-  /// True when the Western/Vedic compare toggle should show: the user reads in
-  /// "both" traditions and a Vedic Moon-rashi reading is available.
-  bool get _compareActive =>
-      widget.tradition == 'both' &&
-      _vedicHoroscope != null &&
-      _vedicSign.isNotEmpty;
-
-  bool get _isVedicSelected => _compareActive && _selectedSystem == 'vedic';
-
-  HoroscopeData? get _activeHoroscope =>
-      _isVedicSelected ? _vedicHoroscope : _horoscope;
-
-  String get _activeSign => _isVedicSelected ? _vedicSign : widget.readingSign;
-
-  String get _activeSystem => _isVedicSelected ? 'vedic' : widget.system;
-
-  bool get _activeLoading => _isVedicSelected ? _loadingVedic : _isLoading;
-
   Future<void> _loadData() async {
     // Only show loading state if we don't already have data from parent
     if (widget.initialHoroscope == null && mounted) {
       setState(() => _isLoading = true);
-    }
-    final wantsCompare = widget.tradition == 'both' && _hasBirthData;
-    if (wantsCompare && mounted) {
-      setState(() => _loadingVedic = true);
     }
     final results = await Future.wait([
       ApiService.getHoroscope(
@@ -226,60 +206,13 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       }
     }
-    // "Both" users also get the Vedic Moon-rashi reading for the compare view.
-    if (wantsCompare) {
-      await _loadVedicReading();
-    } else if (mounted && (_vedicHoroscope != null || _loadingVedic)) {
-      // Compare no longer applies (tradition/birth details changed) — clear it.
-      setState(() {
-        _vedicHoroscope = null;
-        _vedicSign = '';
-        _loadingVedic = false;
-        _selectedSystem = 'western';
-      });
-    }
-    if (mounted) _ensureForecast(_activeSystem);
-  }
-
-  /// Resolves the sidereal Moon sign and fetches its reading for the compare
-  /// toggle. Silently clears the Vedic side if the chart can't be resolved.
-  Future<void> _loadVedicReading() async {
-    final identity = await SignResolver.resolve(
-      tradition: 'vedic',
-      sunSign: widget.userSign,
-      birthDate: widget.birthDate,
-      birthTime: widget.birthTime,
-      birthPlace: widget.birthPlace,
-    );
-    HoroscopeData? vedic;
-    if (identity.system == 'vedic') {
-      vedic = await ApiService.getHoroscope(
-        identity.readingSign,
-        system: 'vedic',
-        birthDate: widget.birthDate,
-        birthTime: widget.birthTime,
-        birthPlace: widget.birthPlace,
-      );
-    }
-    if (!mounted) return;
-    setState(() {
-      if (identity.system == 'vedic' && vedic != null) {
-        _vedicSign = identity.readingSign;
-        _vedicHoroscope = vedic;
-      } else {
-        _vedicSign = '';
-        _vedicHoroscope = null;
-      }
-      _loadingVedic = false;
-    });
+    if (mounted) _ensureForecast(widget.system);
   }
 
   @override
   Widget build(BuildContext context) {
-    // Headline sign follows the active reading so the "both" compare toggle
-    // swaps the greeting between the Sun sign and the Vedic Moon sign.
     final sign = zodiacSigns.firstWhere(
-      (z) => z.name == _activeSign,
+      (z) => z.name == widget.readingSign,
       orElse: () => zodiacSigns.firstWhere((z) => z.name == widget.userSign),
     );
 
@@ -300,15 +233,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 16),
                   _buildVedicNudge(context),
                 ],
-                if (_compareActive) ...[
-                  const SizedBox(height: 20),
-                  _buildTraditionCompare(context),
-                ] else if (widget.tradition == 'both' && !_hasBirthData) ...[
-                  const SizedBox(height: 16),
-                  _buildBothVedicHint(context),
-                ],
                 const SizedBox(height: 24),
-                _buildDailyCard(context, _activeHoroscope),
+                _buildDailyCard(context, _horoscope),
                 const SizedBox(height: 24),
                 _buildQuickActions(context),
                 const SizedBox(height: 24),
@@ -345,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: AppColors.textPrimary,
                 ),
               ),
-              if (_activeSystem == 'vedic')
+              if (widget.system == 'vedic')
                 const Padding(
                   padding: EdgeInsets.only(top: 2),
                   child: Text(
@@ -360,6 +286,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
         ),
+        _buildNotificationBell(context),
+        const SizedBox(width: 8),
         Container(
           width: 56,
           height: 56,
@@ -372,6 +300,36 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildNotificationBell(BuildContext context) {
+    return IconButton(
+      onPressed: _openNotifications,
+      tooltip: 'Reminders',
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(
+            Icons.notifications_none,
+            color: AppColors.textSecondary,
+            size: 26,
+          ),
+          if (!_remindersOn)
+            Positioned(
+              right: -1,
+              top: -1,
+              child: Container(
+                width: 9,
+                height: 9,
+                decoration: const BoxDecoration(
+                  color: AppColors.accent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -429,189 +387,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Western/Vedic compare toggle for "both" users: two segments showing each
-  /// tradition's sign + today's score at a glance; tapping switches the reading
-  /// shown in the daily card below.
-  Widget _buildTraditionCompare(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.compare_arrows, color: AppColors.accent, size: 18),
-            const SizedBox(width: 8),
-            Text(
-              'Your two readings',
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.card,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.all(4),
-          child: Row(
-            children: [
-              Expanded(
-                child: _buildCompareSegment(
-                  selected: !_isVedicSelected,
-                  symbol: '\u2609', // ☉ Sun
-                  traditionLabel: 'Western',
-                  signName: widget.readingSign,
-                  subLabel: 'Sun sign',
-                  score: _horoscope?.overallScore,
-                  onTap: () {
-                    setState(() => _selectedSystem = 'western');
-                    _ensureForecast('western');
-                  },
-                ),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: _buildCompareSegment(
-                  selected: _isVedicSelected,
-                  symbol: '\u263D', // ☽ Moon
-                  traditionLabel: 'Vedic',
-                  signName: _vedicSign,
-                  subLabel: 'Janma Rashi',
-                  score: _vedicHoroscope?.overallScore,
-                  onTap: () {
-                    setState(() => _selectedSystem = 'vedic');
-                    _ensureForecast('vedic');
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCompareSegment({
-    required bool selected,
-    required String symbol,
-    required String traditionLabel,
-    required String signName,
-    required String subLabel,
-    required int? score,
-    required VoidCallback onTap,
-  }) {
-    final fg = selected ? AppColors.primary : AppColors.textMuted;
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-        decoration: BoxDecoration(
-          gradient: selected ? AppColors.gradientGold : null,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(symbol, style: TextStyle(fontSize: 15, color: fg)),
-                const SizedBox(width: 6),
-                Text(
-                  traditionLabel,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: fg,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              signName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.playfairDisplay(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: selected ? AppColors.primary : AppColors.textPrimary,
-              ),
-            ),
-            Text(
-              score != null ? '$subLabel · $score%' : subLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                color: selected
-                    ? AppColors.primary.withAlpha(200)
-                    : AppColors.textMuted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Subtle prompt for "both" users who haven't entered birth details yet,
-  /// explaining how to unlock the Vedic side of the compare view.
-  Widget _buildBothVedicHint(BuildContext context) {
-    return GestureDetector(
-      onTap: widget.onOpenProfile,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.mysticTeal.withAlpha(20),
-          border: Border.all(color: AppColors.mysticTeal.withAlpha(77)),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.spa_outlined,
-              color: AppColors.mysticTeal,
-              size: 18,
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Text(
-                'Add your birth time & place to compare your Western and '
-                'Vedic (Moon sign) readings side by side.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                  height: 1.3,
-                ),
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right,
-              color: AppColors.mysticTeal,
-              size: 18,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildDailyCard(BuildContext context, HoroscopeData? horoscope) {
-    final isLoading = _activeLoading;
+    final isLoading = _isLoading;
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => HoroscopeScreen(
-              userSign: _activeSign,
-              system: _activeSystem,
-              initialHoroscope: _activeHoroscope,
+              userSign: widget.readingSign,
+              system: widget.system,
+              initialHoroscope: _horoscope,
               birthDate: widget.birthDate,
               birthTime: widget.birthTime,
               birthPlace: widget.birthPlace,
@@ -679,19 +465,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
               ],
             ),
-            if (_compareActive) ...[
-              const SizedBox(height: 2),
-              Text(
-                _isVedicSelected
-                    ? '$_activeSign · Vedic Moon reading'
-                    : '$_activeSign · Western Sun reading',
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
             const SizedBox(height: 12),
             if (isLoading)
               const Center(
@@ -794,7 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
   /// The compact 7-day energy sparkline for the active reading, or nothing when
   /// the forecast isn't available.
   Widget _buildSparkline() {
-    final points = _forecastBySystem[_activeSystem];
+    final points = _forecastBySystem[widget.system];
     if (points == null || points.length < 2) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 16),
@@ -803,7 +576,11 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.show_chart, size: 14, color: AppColors.textMuted),
+              const Icon(
+                Icons.show_chart,
+                size: 14,
+                color: AppColors.textMuted,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Next 7 days',
@@ -1475,9 +1252,30 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Trending Today 🔥',
-          style: Theme.of(context).textTheme.titleLarge,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Trending Today 🔥',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => DiscoverScreen(userSign: widget.userSign),
+                ),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.accent,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('See all', style: TextStyle(fontSize: 13)),
+            ),
+          ],
         ),
         const SizedBox(height: 16),
         ..._stories.take(3).map((story) => _buildStoryCard(context, story)),

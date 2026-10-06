@@ -59,14 +59,16 @@ def draw_tarot_card(db=None) -> dict:
         try:
             from db.models import TarotCard
             # Auto-seed on first use
-            count = db.query(TarotCard).count()
-            if count == 0:
-                seed_tarot_db(db)
-
             total = db.query(TarotCard).count()
+            if total == 0:
+                seed_tarot_db(db)
+                total = db.query(TarotCard).count()
+
             if total > 0:
                 offset = _random.randint(0, total - 1)
-                card_row = db.query(TarotCard).offset(offset).first()
+                # OFFSET without ORDER BY has no defined row order in Postgres,
+                # so the same offset could repeat or skip cards between calls.
+                card_row = db.query(TarotCard).order_by(TarotCard.id).offset(offset).first()
                 if card_row:
                     interpretation = (
                         card_row.reversed_interpretation if is_reversed

@@ -18,6 +18,8 @@ from dataclasses import dataclass
 # ── Default connection values (the single place to change fallbacks) ──────────
 DEFAULT_AI_PROVIDER = "auto"
 DEFAULT_AI_MODEL = "gemini-2.5-flash-lite"
+# Gemini is a hosted API, so it needs nothing like the local models' budget.
+DEFAULT_GEMINI_TIMEOUT = 120
 
 DEFAULT_OLLAMA_BASE_URL = "http://192.168.29.159:11434"
 DEFAULT_OLLAMA_MODEL = "gemma3:4b"
@@ -38,6 +40,7 @@ class LLMConfig:
     ai_provider: str
     ai_model: str
     gemini_api_key: str
+    gemini_timeout: int
 
     ollama_base_url: str   # full URL, e.g. http://host:11434  (requests / aiohttp)
     ollama_host: str       # bare host:port                    (stdlib http.client)
@@ -81,6 +84,7 @@ def load_llm_config() -> LLMConfig:
         ai_provider=os.getenv("AI_PROVIDER", DEFAULT_AI_PROVIDER).lower(),
         ai_model=os.getenv("AI_MODEL", DEFAULT_AI_MODEL),
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+        gemini_timeout=_int_env("GEMINI_TIMEOUT", DEFAULT_GEMINI_TIMEOUT),
         ollama_base_url=ollama_base_url,
         ollama_host=ollama_host,
         ollama_model=os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL),

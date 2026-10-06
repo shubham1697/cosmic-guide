@@ -1,5 +1,23 @@
 .DS_Store
 
+# Editors / IDEs
+.idea/
+.vscode/
+
+# Flutter / Dart
+mobile-app/build/
+mobile-app/android/build/
+mobile-app/android/.gradle/
+mobile-app/.dart_tool/
+mobile-app/ios/Pods/
+mobile-app/ios/.symlinks/
+mobile-app/ios/Flutter/Flutter.podspec
+mobile-app/ios/Flutter/ephemeral/
+# Release signing — keystore passwords, never commit
+mobile-app/android/key.properties
+*.jks
+*.keystore
+
 # Python
 __pycache__/
 *.py[cod]
@@ -29,7 +47,8 @@ dashboard/data/
 # Firebase / FCM
 # Server-side service-account key (SECRET — grants send access, never commit)
 backend/secrets/
-# Client config (contains project API keys; commit later if desired)
-mobile-app/android/app/google-services.json
-mobile-app/ios/Runner/GoogleService-Info.plist
+# Client config (contains project API keys; commit later if desired).
+# Globbed, not path-pinned: downloaded copies often land at the repo root.
+google-services*.json
+GoogleService-Info*.plist
 mobile-app/lib/firebase_options.dart

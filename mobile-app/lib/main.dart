@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'models/zodiac.dart';
 import 'services/api_service.dart';
+import 'services/auth_service.dart';
 import 'services/sign_resolver.dart';
 import 'services/notification_service.dart';
 import 'services/local_notification_service.dart';
+import 'screens/auth_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/chart_screen.dart';
 import 'screens/vedic_home_screen.dart';
@@ -28,6 +33,8 @@ void main() async {
     // Non-fatal: platforms without Firebase config (e.g. desktop) still run.
     debugPrint('Firebase init skipped: $e');
   }
+  // Authenticated API calls carry the Firebase ID token.
+  ApiService.tokenProvider = AuthService.idToken;
   await NotificationService.init();
   runApp(const CosmicGuideApp());
 }
@@ -56,18 +63,91 @@ class AppEntry extends StatefulWidget {
 class _AppEntryState extends State<AppEntry> {
   bool _loading = true;
   bool _showSplash = true;
+  bool _signedIn = false;
   bool _onboarded = false;
   String _userName = '';
   String _userSign = 'Aries';
+  StreamSubscription<User?>? _authSub;
 
   @override
   void initState() {
     super.initState();
-    _loadPrefs();
+    _authSub = AuthService.authStateChanges().listen(_onAuthChanged);
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
+
+  /// Fires on launch, sign-in and sign-out, so the gate always reflects reality.
+  Future<void> _onAuthChanged(User? user) async {
+    if (user == null) {
+      await _clearLocalProfile();
+      if (!mounted) return;
+      setState(() {
+        _signedIn = false;
+        _onboarded = false;
+        _userName = '';
+        _userSign = 'Aries';
+        _loading = false;
+      });
+      return;
+    }
+
+    await _hydrateFromServer(user);
+    await _loadPrefs();
+    if (mounted) setState(() => _signedIn = true);
+  }
+
+  /// Restore the profile this account saved on any device. A failure here is
+  /// non-fatal: the user simply completes onboarding as if they were new.
+  Future<void> _hydrateFromServer(User user) async {
+    final profile = await ApiService.fetchProfile();
+    final prefs = await SharedPreferences.getInstance();
+
+    // Keep the sign-up name even when the server is unreachable, so onboarding
+    // never asks for a name the user has already given. The server row starts
+    // nameless for email sign-up: its token predates updateDisplayName().
+    final serverName = (profile?['name'] ?? '') as String;
+    final name = serverName.isNotEmpty ? serverName : (user.displayName ?? '');
+    if (name.isNotEmpty) await prefs.setString('userName', name);
+
+    if (profile == null) return;
+
+    final birthDate = (profile['birthDate'] ?? '') as String;
+    final sign = (profile['zodiacSign'] ?? '') as String;
+
+    if (sign.isNotEmpty) await prefs.setString('userSign', sign);
+    if (birthDate.isNotEmpty) await prefs.setString('birthDate', birthDate);
+    for (final entry in {
+      'birthTime': profile['birthTime'],
+      'birthPlace': profile['birthPlace'],
+      'tradition': profile['tradition'],
+    }.entries) {
+      final value = entry.value;
+      if (value is String && value.isNotEmpty) {
+        await prefs.setString(entry.key, value);
+      }
+    }
+
+    // A saved sign means this account already finished onboarding elsewhere.
+    if (sign.isNotEmpty && birthDate.isNotEmpty) {
+      await prefs.setBool('onboarded', true);
+    }
+  }
+
+  /// Sign-out must not leave one account's readings visible to the next.
+  Future<void> _clearLocalProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    ApiService.clearCache();
   }
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       _onboarded = prefs.getBool('onboarded') ?? false;
       _userName = prefs.getString('userName') ?? '';
@@ -103,8 +183,15 @@ class _AppEntryState extends State<AppEntry> {
       );
     }
 
+    if (!_signedIn) {
+      return const AuthScreen();
+    }
+
     if (!_onboarded) {
-      return OnboardingScreen(onComplete: _onOnboardingComplete);
+      return OnboardingScreen(
+        initialName: _userName,
+        onComplete: _onOnboardingComplete,
+      );
     }
 
     return MainShell(userName: _userName, userSign: _userSign);
@@ -131,7 +218,7 @@ class _MainShellState extends State<MainShell> {
   String _birthDate = '';
   String _birthTime = '';
   String _birthPlace = '';
-  String _tradition = 'both';
+  String _tradition = 'western';
 
   // Resolved reading identity (see SignResolver): which sign + system the
   // daily reading is keyed on. Western/Both use the tropical Sun sign; Vedic
@@ -140,24 +227,11 @@ class _MainShellState extends State<MainShell> {
   String _system = 'western';
   bool _needsBirthDetailsForVedic = false;
 
-  // Tabs shown depend on the chosen reading tradition. 'both' (default) sees
-  // everything; 'western'/'vedic' get a focused nav.
-  List<AppTab> get _visibleTabs => switch (_tradition) {
-    'western' => const [
-      AppTab.home,
-      AppTab.chart,
-      AppTab.match,
-      AppTab.profile,
-    ],
-    'vedic' => const [AppTab.home, AppTab.vedic, AppTab.match, AppTab.profile],
-    _ => const [
-      AppTab.home,
-      AppTab.chart,
-      AppTab.vedic,
-      AppTab.match,
-      AppTab.profile,
-    ],
-  };
+  // Tabs shown depend on the chosen reading tradition: Vedic readers get the
+  // Kundli hub, everyone else gets the Western chart.
+  List<AppTab> get _visibleTabs => _tradition == 'vedic'
+      ? const [AppTab.home, AppTab.vedic, AppTab.match, AppTab.profile]
+      : const [AppTab.home, AppTab.chart, AppTab.match, AppTab.profile];
 
   @override
   void initState() {
@@ -186,7 +260,7 @@ class _MainShellState extends State<MainShell> {
       _birthDate = prefs.getString('birthDate') ?? '';
       _birthTime = prefs.getString('birthTime') ?? '';
       _birthPlace = prefs.getString('birthPlace') ?? '';
-      _tradition = prefs.getString('tradition') ?? 'both';
+      _tradition = normalizeTradition(prefs.getString('tradition'));
       final idx = _visibleTabs.indexOf(currentTab);
       _currentIndex = idx == -1 ? 0 : idx;
     });

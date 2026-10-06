@@ -13,7 +13,7 @@ except ImportError:
     raise SystemExit("Missing dependency: pip install pyyaml")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TODO = os.path.join(ROOT, "TODO.md")
+TODO = os.path.join(ROOT, "docs", "TODO.md")
 OUT = os.path.join(ROOT, "dashboard", "features.yaml")
 
 STATUS = {"x": "done", "~": "partial", " ": "pending"}
@@ -43,7 +43,7 @@ def main():
                     "status": STATUS[item.group(1)],
                 })
     sections = [s for s in sections if s["items"]]
-    doc = {"meta": {"app": "CosmicGuide", "source": "TODO.md"}, "sections": sections}
+    doc = {"meta": {"app": "CosmicGuide", "source": "docs/TODO.md"}, "sections": sections}
     with open(OUT, "w", encoding="utf-8") as handle:
         yaml.safe_dump(doc, handle, sort_keys=False, allow_unicode=True, width=100)
     total = sum(len(s["items"]) for s in sections)

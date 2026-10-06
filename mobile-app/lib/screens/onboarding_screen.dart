@@ -1,14 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../data/zodiac_signs_data.dart';
+import '../services/api_service.dart';
 import '../widgets/starry_background.dart';
 import '../widgets/city_autocomplete_field.dart';
 
 class OnboardingScreen extends StatefulWidget {
   final Function(String name, String sign) onComplete;
-  const OnboardingScreen({super.key, required this.onComplete});
+
+  /// Name already captured at sign-up; when set, the name step is skipped.
+  final String initialName;
+
+  const OnboardingScreen({
+    super.key,
+    required this.onComplete,
+    this.initialName = '',
+  });
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -25,7 +36,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   String _birthPlaceRawText = '';
   bool _showBirthPlaceError = false;
   bool _isRevealing = false;
-  String _tradition = 'both';
+  String _tradition = 'western';
+
+  /// True when the user picked a sign themselves instead of accepting the one
+  /// derived from their birth date (cusp birthdays can fall either way).
+  bool _signOverridden = false;
+
+  bool get _skipNamePage => widget.initialName.trim().isNotEmpty;
+
+  int get _pageCount => _skipNamePage ? 4 : 5;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = widget.initialName.trim();
+  }
 
   @override
   void dispose() {
@@ -60,7 +85,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 
   void _goToNext() {
-    if (_currentPage < 4) {
+    if (_currentPage < _pageCount - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
@@ -113,8 +138,97 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       setState(() {
         _birthDate = date;
         _selectedSign = _calculateZodiac(date);
+        _signOverridden = false;
       });
     }
+  }
+
+  Future<void> _showSignPicker() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.secondary,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Choose your sign',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Born on a cusp? Pick whichever sign you identify with.',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 3,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.05,
+                children: zodiacSigns.map((z) {
+                  final isSelected = z.name == _selectedSign;
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(context, z.name),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.accent.withAlpha(30)
+                            : AppColors.card,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? AppColors.accent
+                              : AppColors.textMuted.withAlpha(51),
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(z.symbol, style: const TextStyle(fontSize: 26)),
+                          const SizedBox(height: 4),
+                          Text(
+                            z.name,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: isSelected
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedSign = picked;
+      _signOverridden =
+          _birthDate != null && picked != _calculateZodiac(_birthDate!);
+    });
   }
 
   Future<void> _completeOnboarding() async {
@@ -131,21 +245,34 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await prefs.setString('userSign', _selectedSign!);
     await prefs.setString('tradition', _tradition);
     await prefs.setBool('onboarded', true);
+    String? birthTimeValue;
+    String? birthDateValue;
     if (_birthTime != null) {
-      await prefs.setString(
-        'birthTime',
-        '${_birthTime!.hour.toString().padLeft(2, '0')}:${_birthTime!.minute.toString().padLeft(2, '0')}',
-      );
+      birthTimeValue =
+          '${_birthTime!.hour.toString().padLeft(2, '0')}:${_birthTime!.minute.toString().padLeft(2, '0')}';
+      await prefs.setString('birthTime', birthTimeValue);
     }
     if (_birthDate != null) {
-      await prefs.setString(
-        'birthDate',
-        '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}',
-      );
+      birthDateValue =
+          '${_birthDate!.year}-${_birthDate!.month.toString().padLeft(2, '0')}-${_birthDate!.day.toString().padLeft(2, '0')}';
+      await prefs.setString('birthDate', birthDateValue);
     }
     if (_selectedBirthPlace != null && _selectedBirthPlace!.isNotEmpty) {
       await prefs.setString('birthPlace', _selectedBirthPlace!);
     }
+
+    // Best-effort sync so the profile restores on the user's next device.
+    unawaited(
+      ApiService.updateProfile(
+        name: _nameController.text,
+        zodiacSign: _selectedSign,
+        tradition: _tradition,
+        birthDate: birthDateValue,
+        birthTime: birthTimeValue,
+        birthPlace: _selectedBirthPlace,
+      ),
+    );
+
     widget.onComplete(_nameController.text, _selectedSign!);
   }
 
@@ -161,7 +288,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             onPageChanged: (page) => setState(() => _currentPage = page),
             children: [
               _buildWelcomePage(),
-              _buildNamePage(),
+              if (!_skipNamePage) _buildNamePage(),
               _buildBirthPage(),
               _buildTraditionPage(),
               _buildBirthDetailsPage(),
@@ -342,6 +469,28 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     style: const TextStyle(color: AppColors.textMuted),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            if (_signOverridden)
+              Text(
+                'Chosen by you',
+                style: GoogleFonts.poppins(
+                  color: AppColors.mysticTeal,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            TextButton(
+              onPressed: _showSignPicker,
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.textSecondary,
+              ),
+              child: Text(
+                _signOverridden
+                    ? 'Pick a different sign'
+                    : 'Not your sign? Choose it yourself',
+                style: const TextStyle(fontSize: 13),
               ),
             ),
           ],
@@ -542,18 +691,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               child: const Text('Continue'),
             ),
           ),
-          const SizedBox(height: 4),
-          TextButton(
-            onPressed: () {
-              setState(() => _tradition = 'both');
-              _goToNext();
-            },
-            child: const Text(
-              'Not sure? Explore both for now',
-              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
-            ),
-          ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           _buildPageIndicator(),
         ],
       ),
@@ -630,7 +768,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Widget _buildPageIndicator() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(5, (index) {
+      children: List.generate(_pageCount, (index) {
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           margin: const EdgeInsets.symmetric(horizontal: 4),

@@ -22,6 +22,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: cosmicguide-api
+    # The image runs a hardened non-root production server; dev adds hot reload
+    # and root so it can write into the bind-mounted ./backend/logs.
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    user: root
     ports:
       - "8000:8000"
     depends_on:
@@ -33,7 +37,10 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_MODEL=gemini-2.5-flash-lite
       - AI_PROVIDER=${AI_PROVIDER:-auto}
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Operator key for /admin/* and the notification broadcast routes.
+      # Unset => those routes stay disabled (503) rather than open.
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
       - OLLAMA_BASE_URL=http://192.168.29.159:11434
       - IPHONE_LLM_BASE_URL=${IPHONE_LLM_BASE_URL:-http://192.168.29.162:8080/v1}
       - IPHONE_LLM_MODEL=${IPHONE_LLM_MODEL:-base}

@@ -1,6 +1,6 @@
 meta:
   app: CosmicGuide
-  source: TODO.md
+  source: docs/TODO.md
 sections:
 - name: 🐛 Bugs / Investigations
   items:
@@ -35,11 +35,13 @@ sections:
   - title: Cache key update — in-memory cache key is now (sign, system, date)
     status: done
   - title: System threaded end-to-end — today_horoscope → get_horoscope(sign, system, db) → generate_daily_horoscope(sign,
-      date, system). Western stays fully DB-backed; Vedic uses memory + AI + template only (no DB persistence)
-      to avoid a horoscopes schema migration (no system column; create_all won't alter existing tables)
+      date, system). Western AND Vedic are now DB-backed (see the system column work, Aug 4); originally
+      Vedic was memory + AI + template only
     status: done
-  - title: _Deferred:_ nakshatra-level detail + Vedic DB persistence (needs system column + migration)
-    status: pending
+  - title: _Vedic DB persistence:_ DONE (Aug 4) — system VARCHAR(10) column on horoscopes + idempotent
+      shared/db_migrations.py migration; horoscope_service reads/writes western AND vedic. _Deferred:_
+      nakshatra-level detail
+    status: done
   - title: _R3 scope:_ resolve WHICH rashi is the user's Moon sign (client-side, via existing sidereal
       /chart/vedic) and pass it as zodiac_sign with system=vedic — done in R3
     status: done
@@ -67,13 +69,17 @@ sections:
       vedic→Home/Kundli/Match/Profile); selected tab is preserved when the set changes
     status: done
   - title: Per-tradition labels — nav-level done (Vedic tab reads "Kundli" for Vedic users); in-screen
-      Rising↔Lagna / Birth Chart↔Kundli deferred to R5 Jyotish terminology
-    status: partial
-- name: R5. Authenticity polish — 🚧 in progress
+      Rising↔Lagna / Birth Chart↔Kundli relabels landed in R5 Jyotish terminology
+    status: done
+- name: R5. Authenticity polish — ✅ done
   items:
-  - title: Jyotish terminology in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — _kundli chart already
-      uses Lagna/Nakshatra; audit + fold in R4-deferred Rising↔Lagna / Birth Chart↔Kundli relabels_
-    status: pending
+  - title: 'Jyotish terminology in Vedic mode (Rashi, Lagna, Graha, Nakshatra, Dasha) — kundli chart already
+      uses Lagna/Nakshatra; Rising↔Lagna and Birth Chart↔Kundli now relabel on the Western surfaces a
+      Vedic user still reaches: Share Cosmic Card (shareable_chart_card.dart/share_card_screen.dart —
+      Rising→Lagna when tradition==''vedic''), Profile edit birth-time helper (profile_screen.dart), and
+      the Vedic hub Dasha/Dosha copy (vedic_home_screen.dart — "birth chart"→"Kundli"). flutter analyze
+      clean'
+    status: done
   - title: Glossary / "why signs differ" explainer screen — new AstroGlossaryScreen (tropical vs. sidereal
       + ~24° Lahiri ayanamsa, plus Jyotish & Western term cards). Reachable via Profile → Astrology Guide.
       flutter analyze clean
@@ -81,9 +87,13 @@ sections:
   - title: 'Vedic wheel defaults to North/South — already satisfied: kundli_chart_screen.dart defaults
       to _KundliChartStyle.north and uses Lagna/Nakshatra terminology (verified in R5)'
     status: done
-  - title: '"Both" compare view — reuse the Match screen''s Western/Vedic tab pattern (Western Sun reading
-      vs. Vedic Moon-rashi reading side by side)'
-    status: pending
+  - title: '"Both" compare view — DONE (Jul 27). For tradition == ''both'' users with birth details, Home
+      now fetches the Vedic Moon-rashi reading alongside the Western Sun reading and shows a segmented
+      Western/Vedic toggle (each segment displays its sign + today''s score at a glance, Match-tab aesthetic).
+      Tapping swaps the daily card + its tap-through to HoroscopeScreen; a subtle nudge prompts "both"
+      users missing birth time/place to add them. Files: lib/screens/home_screen.dart (_buildTraditionCompare/_buildCompareSegment/_buildBothVedicHint,
+      _loadVedicReading), lib/main.dart (passes tradition + birth details to Home). flutter analyze clean'
+    status: done
 - name: 1. Onboarding & User Setup
   items:
   - title: Welcome screen — app intro with "Begin Your Journey" CTA
@@ -210,8 +220,9 @@ sections:
   - title: Card spread layouts — 3-card spread built (lib/screens/tarot_spread_screen.dart); Celtic Cross
       still pending
     status: partial
-  - title: Card history / journal — save drawn cards with date, let user add notes
-    status: pending
+  - title: Card history / journal — drawn cards now saved with date in the global Reading History (Profile
+      → Reading History); per-card notes still pending
+    status: partial
   - title: Card animation sound effects — swipe/flip audio feedback
     status: pending
   - title: Backend integration — GET /tarot/draw, falls back to local mock deck
@@ -405,7 +416,7 @@ sections:
     status: done
   - title: Sign info line — "Scorpio ♏ | Oct 23 - Nov 21" format (14px muted)
     status: done
-  - title: 'Stats row — 3 stats with dividers:'
+  - title: 'Stats row — 3 stats with dividers (now real, derived from HistoryService):'
     status: done
   - title: Personality traits section — (see section 9 above)
     status: done
@@ -422,8 +433,8 @@ sections:
     status: pending
   - title: Change birth details — re-enter DOB, recalculate sign
     status: pending
-  - title: Real stats tracking — count actual readings, calculate real streak from usage dates
-    status: pending
+  - title: Real stats tracking — real readings count + day streak from actual usage dates (HistoryService)
+    status: done
   - title: Dark/light theme toggle — currently dark only
     status: pending
   - title: Language selection — multi-language support (Hindi, etc.)

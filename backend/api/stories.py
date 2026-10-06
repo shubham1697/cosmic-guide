@@ -1,4 +1,11 @@
-from fastapi import APIRouter, Query, Depends, HTTPException, BackgroundTasks
+"""Read-only stories API.
+
+Content is produced by the batch populator (``./populate.sh -s``) and served
+from the database. Nothing here ever calls an LLM: a request must never wait on
+generation, and generation must never be triggerable from a public endpoint.
+"""
+
+from fastapi import APIRouter, Query, Depends, HTTPException
 from schemas import StoryResponse, StoryListResponse
 from db.database import get_db
 from logger import get_logger
@@ -63,10 +70,11 @@ def list_stories(
     category: str = Query(None, description="Filter by category"),
     db=Depends(get_db),
 ):
-    """Return stories from DB (AI-generated). Auto-seeds via Ollama if DB is empty."""
+    """Return stories from the DB. An empty DB falls back to the bundled set:
+    generation is operator-only (POST /generate) or the populator, never a
+    side effect of a public read."""
     from db.models import Story as StoryModel
-    generated_via_llm = False
-    
+
     logger.info("→ GET /stories | page=%d per_page=%d category=%s", page, per_page, category or "all")
 
     try:
@@ -75,21 +83,10 @@ def list_stories(
             query = query.filter(StoryModel.category.ilike(category))
         total = query.count()
 
-        # Auto-seed from Ollama when DB is empty
-        if total == 0 and not category:
-            logger.info("list_stories  DB empty — triggering Ollama story generation")
-            from services.story_service import seed_stories_db
-            n = seed_stories_db(db)
-            logger.info("list_stories  auto-seed generated %d stories", n)
-            generated_via_llm = n > 0
-            # Re-query after seeding
-            query = db.query(StoryModel).order_by(StoryModel.published_at.desc())
-            total = query.count()
-
         if total > 0:
             offset = (page - 1) * per_page
             rows = query.offset(offset).limit(per_page).all()
-            logger.info("list_stories  source=%s  returned=%d total=%d", "llm" if generated_via_llm else "db", len(rows), total)
+            logger.info("list_stories  source=db  returned=%d total=%d", len(rows), total)
             logger.info("← GET /stories | status=200 | returned=%d total=%d", len(rows), total)
             return StoryListResponse(
                 stories=[
@@ -154,29 +151,3 @@ def get_story(story_id: int, db=Depends(get_db)):
         return fallback
 
     raise HTTPException(status_code=404, detail="Story not found")
-
-
-@router.post("/generate", status_code=202)
-def generate_stories(background_tasks: BackgroundTasks, db=Depends(get_db)):
-    """
-    Trigger Ollama story generation in the background.
-    Generates one story per category, overwrites existing stories, and
-    writes results to data/mock/stories_data.py.
-    Returns immediately with 202 Accepted.
-    """
-    from db.models import Story as StoryModel
-    from services.story_service import seed_stories_db
-
-    def _run(db_session):
-        try:
-            # Clear existing stories before regenerating
-            db_session.query(StoryModel).delete()
-            db_session.commit()
-            n = seed_stories_db(db_session)
-            logger.info("generate_stories  background task completed  stories=%d", n)
-        except Exception as exc:
-            logger.error("generate_stories  background task failed: %s", exc)
-            db_session.rollback()
-
-    background_tasks.add_task(_run, db)
-    return {"status": "accepted", "message": "Story generation started. Check /api/v1/stories in a minute."}
