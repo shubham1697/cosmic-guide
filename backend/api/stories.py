@@ -66,13 +66,12 @@ def _mock_story_by_id(story_id: int):
 @router.get("", response_model=StoryListResponse)
 def list_stories(
     page: int = Query(1, ge=1),
-    per_page: int = Query(10, ge=1, le=50),
+    per_page: int = Query(10, ge=1, le=50, alias="perPage"),
     category: str = Query(None, description="Filter by category"),
     db=Depends(get_db),
 ):
     """Return stories from the DB. An empty DB falls back to the bundled set:
-    generation is operator-only (POST /generate) or the populator, never a
-    side effect of a public read."""
+    generation is the populator's job, never a side effect of a public read."""
     from db.models import Story as StoryModel
 
     logger.info("→ GET /stories | page=%d per_page=%d category=%s", page, per_page, category or "all")

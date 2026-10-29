@@ -20,6 +20,7 @@ class _TarotScreenState extends State<TarotScreen>
   TarotCard? _drawnCard;
   bool _isRevealed = false;
   bool _isReversed = false;
+  bool _isDrawing = false;
   late AnimationController _flipController;
   late Animation<double> _flipAnimation;
 
@@ -42,19 +43,25 @@ class _TarotScreenState extends State<TarotScreen>
   }
 
   Future<void> _drawCard() async {
-    final result = await ApiService.drawTarotCard();
-    if (result == null) return;
-    setState(() {
-      _drawnCard = result.card;
-      _isRevealed = false;
-      _isReversed = result.isReversed;
-    });
-    _flipController.reset();
-    HistoryService.record(
-      type: ReadingType.tarot,
-      title: result.card.name,
-      subtitle: result.isReversed ? 'Reversed' : 'Upright',
-    );
+    if (_isDrawing) return;
+    setState(() => _isDrawing = true);
+    try {
+      final result = await ApiService.drawTarotCard();
+      if (result == null || !mounted) return;
+      setState(() {
+        _drawnCard = result.card;
+        _isRevealed = false;
+        _isReversed = result.isReversed;
+      });
+      _flipController.reset();
+      HistoryService.record(
+        type: ReadingType.tarot,
+        title: result.card.name,
+        subtitle: result.isReversed ? 'Reversed' : 'Upright',
+      );
+    } finally {
+      if (mounted) setState(() => _isDrawing = false);
+    }
   }
 
   void _revealCard() {
@@ -130,8 +137,14 @@ class _TarotScreenState extends State<TarotScreen>
                 if (_drawnCard != null && _isRevealed) _buildInterpretation(),
                 const SizedBox(height: 24),
                 ElevatedButton.icon(
-                  onPressed: _drawCard,
-                  icon: const Icon(Icons.style),
+                  onPressed: _isDrawing ? null : _drawCard,
+                  icon: _isDrawing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.style),
                   label: Text(
                     _drawnCard == null ? 'Draw a Card' : 'Draw Again',
                   ),

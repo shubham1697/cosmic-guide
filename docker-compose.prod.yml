@@ -1,6 +1,7 @@
 # Production stack. Unlike docker-compose.yml (dev) this publishes nothing but
 # the API, ships no adminer, mounts no source, and takes every secret from the
-# environment. Required vars: POSTGRES_PASSWORD, SECRET_KEY, ADMIN_API_KEY.
+# environment. Required vars: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB,
+# ADMIN_API_KEY.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
@@ -32,11 +33,12 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY}
       # Unset => /admin/* and the notification broadcast routes return 503.
       - ADMIN_API_KEY=${ADMIN_API_KEY:?set ADMIN_API_KEY}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - AUDIT_LOG_STDOUT=${AUDIT_LOG_STDOUT:-true}
+      # Audit records stay in the rotated file; mirroring them to stdout ships
+      # request metadata to whatever aggregates container logs.
+      - AUDIT_LOG_STDOUT=${AUDIT_LOG_STDOUT:-false}
       - AI_PROVIDER=${AI_PROVIDER:-auto}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_MODEL=${AI_MODEL:-gemini-2.5-flash-lite}

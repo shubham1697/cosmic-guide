@@ -1,9 +1,13 @@
+# LOCAL DEVELOPMENT ONLY. The credentials below are static and the Adminer
+# console is unauthenticated, so every published port is bound to 127.0.0.1 and
+# this file must never be used on an internet-reachable host.
+# Production deployment lives in docker-compose.prod.yml.
 services:
   db:
     image: postgres:16-alpine
     container_name: cosmicguide-db
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: cosmicguide
       POSTGRES_PASSWORD: cosmicguide
@@ -27,17 +31,18 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     user: root
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://cosmicguide:cosmicguide@db:5432/cosmicguide
-      - SECRET_KEY=local-dev-secret-key
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - AI_MODEL=gemini-2.5-flash-lite
       - AI_PROVIDER=${AI_PROVIDER:-auto}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Interactive API docs expose every route (including /admin/*); dev only.
+      - ENABLE_DOCS=${ENABLE_DOCS:-true}
       # Operator key for /admin/* and the notification broadcast routes.
       # Unset => those routes stay disabled (503) rather than open.
       - ADMIN_API_KEY=${ADMIN_API_KEY:-}
@@ -79,7 +84,7 @@ services:
     image: adminer:latest
     container_name: cosmicguide-adminer
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       db:
         condition: service_healthy

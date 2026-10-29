@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # Point the app at a throwaway SQLite file and keep the scheduler off BEFORE
-# importing main (it runs create_all + migrations at import time).
+# importing main.
 _tmp_db = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
 _tmp_db.close()
 os.environ["DATABASE_URL"] = f"sqlite:///{_tmp_db.name}"
@@ -30,6 +30,9 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 import config  # noqa: E402
 import main  # noqa: E402
+
+# Schema work lives in the lifespan now, which a bare TestClient does not run.
+main.prepare_schema()
 
 client = TestClient(main.app)
 
@@ -95,6 +98,25 @@ def test_device_registration_requires_sign_in():
     print("✓ device registration requires a signed-in user")
 
 
+def test_preferences_requires_sign_in():
+    """Knowing a device token must not be enough to silence its reminders."""
+    config.settings.ADMIN_API_KEY = ""
+    r = client.put("/api/v1/notifications/preferences",
+                   json={"token": "t" * 20, "dailyHoroscopeEnabled": False})
+    assert r.status_code == 401, f"preferences should require a user token: {r.status_code}"
+    print("✓ notification preferences require a signed-in user")
+
+
+def test_unregister_is_not_a_token_oracle():
+    """Unregister stays open (sign-out can outlive the session) but must not
+    reveal whether the token was registered."""
+    config.settings.ADMIN_API_KEY = ""
+    unknown = client.post("/api/v1/notifications/unregister", json={"token": "u" * 20})
+    assert unknown.status_code == 200, unknown.text
+    assert unknown.json() == {"status": "ok"}, unknown.json()
+    print("✓ /unregister returns a constant reply (no existence oracle)")
+
+
 if __name__ == "__main__":
     try:
         test_disabled_when_no_key()
@@ -102,6 +124,8 @@ if __name__ == "__main__":
         test_accepts_correct_key()
         test_public_routes_unaffected()
         test_device_registration_requires_sign_in()
+        test_preferences_requires_sign_in()
+        test_unregister_is_not_a_token_oracle()
         print("\nAll admin-auth tests passed.")
     finally:
         os.unlink(_tmp_db.name)

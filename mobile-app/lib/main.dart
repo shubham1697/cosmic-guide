@@ -23,6 +23,7 @@ import 'screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  ApiService.assertReleaseConfig();
   // Local notifications drive the daily reminder and work without Firebase.
   await LocalNotificationService.init();
   try {
@@ -35,6 +36,9 @@ void main() async {
   }
   // Authenticated API calls carry the Firebase ID token.
   ApiService.tokenProvider = AuthService.idToken;
+  // A rejected session can never recover by retrying, so end it rather than
+  // leaving the user signed in against a server that refuses them.
+  ApiService.onUnauthorized = AuthService.signOut;
   await NotificationService.init();
   runApp(const CosmicGuideApp());
 }
@@ -67,6 +71,8 @@ class _AppEntryState extends State<AppEntry> {
   bool _onboarded = false;
   String _userName = '';
   String _userSign = 'Aries';
+  ApiException? _hydrationError;
+  User? _pendingUser;
   StreamSubscription<User?>? _authSub;
 
   @override
@@ -91,30 +97,51 @@ class _AppEntryState extends State<AppEntry> {
         _onboarded = false;
         _userName = '';
         _userSign = 'Aries';
+        _hydrationError = null;
+        _pendingUser = null;
         _loading = false;
       });
       return;
     }
 
-    await _hydrateFromServer(user);
+    _pendingUser = user;
+    final error = await _hydrateFromServer(user);
     await _loadPrefs();
-    if (mounted) setState(() => _signedIn = true);
+    if (mounted) {
+      setState(() {
+        _hydrationError = error;
+        _signedIn = true;
+      });
+    }
   }
 
-  /// Restore the profile this account saved on any device. A failure here is
-  /// non-fatal: the user simply completes onboarding as if they were new.
-  Future<void> _hydrateFromServer(User user) async {
-    final profile = await ApiService.fetchProfile();
+  /// Restore the profile this account saved on any device.
+  ///
+  /// Returns the failure when the server could not be reached. That is *not*
+  /// the same as a new account: sign-out wipes local prefs, so treating an
+  /// unreachable server as "new user" sends a returning user back through
+  /// onboarding and then overwrites their real birth details with whatever
+  /// they half-remember.
+  Future<ApiException?> _hydrateFromServer(User user) async {
+    Map<String, dynamic>? profile;
+    try {
+      profile = await ApiService.fetchProfile();
+    } on ApiException catch (e) {
+      return e;
+    } catch (_) {
+      return const ApiException(ApiErrorKind.network);
+    }
+
     final prefs = await SharedPreferences.getInstance();
 
-    // Keep the sign-up name even when the server is unreachable, so onboarding
-    // never asks for a name the user has already given. The server row starts
+    // Keep the sign-up name even when the server has none, so onboarding never
+    // asks for a name the user has already given. The server row starts
     // nameless for email sign-up: its token predates updateDisplayName().
     final serverName = (profile?['name'] ?? '') as String;
     final name = serverName.isNotEmpty ? serverName : (user.displayName ?? '');
     if (name.isNotEmpty) await prefs.setString('userName', name);
 
-    if (profile == null) return;
+    if (profile == null) return null;
 
     final birthDate = (profile['birthDate'] ?? '') as String;
     final sign = (profile['zodiacSign'] ?? '') as String;
@@ -136,11 +163,29 @@ class _AppEntryState extends State<AppEntry> {
     if (sign.isNotEmpty && birthDate.isNotEmpty) {
       await prefs.setBool('onboarded', true);
     }
+    return null;
   }
 
-  /// Sign-out must not leave one account's readings visible to the next.
+  Future<void> _retryHydration() async {
+    final user = _pendingUser;
+    if (user == null) return;
+    setState(() => _loading = true);
+    await _onAuthChanged(user);
+  }
+
+  /// Sign-out must not leave one account's readings — or its daily reminder —
+  /// visible to whoever signs in next on this device.
   Future<void> _clearLocalProfile() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // The OS holds the scheduled notification, so clearing prefs would leave it
+    // firing with the previous user's sign while the in-app toggle reads "off".
+    await LocalNotificationService.cancelDaily();
+    final token = prefs.getString('fcm_token');
+    if (token != null && token.isNotEmpty) {
+      await ApiService.unregisterDeviceToken(token);
+    }
+
     await prefs.clear();
     ApiService.clearCache();
   }
@@ -187,6 +232,16 @@ class _AppEntryState extends State<AppEntry> {
       return const AuthScreen();
     }
 
+    // A returning user whose profile could not be fetched must not be sent to
+    // onboarding: completing it would overwrite the stored profile.
+    if (_hydrationError != null && !_onboarded) {
+      return _HydrationFailedScreen(
+        error: _hydrationError!,
+        onRetry: _retryHydration,
+        onSignOut: AuthService.signOut,
+      );
+    }
+
     if (!_onboarded) {
       return OnboardingScreen(
         initialName: _userName,
@@ -195,6 +250,59 @@ class _AppEntryState extends State<AppEntry> {
     }
 
     return MainShell(userName: _userName, userSign: _userSign);
+  }
+}
+
+/// Shown when we are signed in but could not load the profile. Routing here
+/// instead of into onboarding is what stops a flaky network from silently
+/// replacing a carefully-entered birth chart.
+class _HydrationFailedScreen extends StatelessWidget {
+  const _HydrationFailedScreen({
+    required this.error,
+    required this.onRetry,
+    required this.onSignOut,
+  });
+
+  final ApiException error;
+  final Future<void> Function() onRetry;
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.primary,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.cloud_off_rounded,
+                color: AppColors.accent,
+                size: 56,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                "We couldn't load your profile",
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                '${error.message}\n\nYour saved details are safe — we just need a '
+                'connection to read them.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 28),
+              FilledButton(onPressed: onRetry, child: const Text('Try again')),
+              TextButton(onPressed: onSignOut, child: const Text('Sign out')),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

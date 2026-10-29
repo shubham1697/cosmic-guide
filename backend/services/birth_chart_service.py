@@ -9,6 +9,7 @@ birth date, time, and location.
 import math
 from collections import OrderedDict
 from datetime import datetime, timezone
+from threading import BoundedSemaphore
 from typing import Optional
 
 import swisseph as swe
@@ -33,6 +34,17 @@ _geocode_fn = None  # RateLimiter-wrapped geocode callable (Nominatim ToS: ≤1 
 _GEOCODE_CACHE_MAX = 2048
 _geocode_cache: OrderedDict[str, tuple[float, float]] = OrderedDict()
 _tz_finder: Optional[TimezoneFinder] = None
+
+# The ToS throttle below serialises every cache miss process-wide, and all API
+# handlers are sync `def` running on a ~40-slot threadpool. Without a cap, a
+# burst of distinct uncached places would occupy every slot and stall endpoints
+# that have nothing to do with geocoding. Capping the number of threads that may
+# be inside a lookup keeps the rest of the API servable; the overflow degrades
+# to "place not resolved", which the chart code already handles.
+_GEOCODE_MAX_INFLIGHT = 8
+_GEOCODE_WAIT_SECONDS = 2.0
+_GEOCODE_TIMEOUT_SECONDS = 3
+_geocode_gate = BoundedSemaphore(_GEOCODE_MAX_INFLIGHT)
 
 
 def _get_geocode_fn():
@@ -114,7 +126,8 @@ def geocode_place(place: str) -> Optional[tuple[float, float]]:
     """Return (latitude, longitude) for a place name, or None.
 
     Successful lookups are cached (the same place is re-resolved many times per
-    request); cache misses are throttled to Nominatim's 1 req/s ToS limit.
+    request); cache misses are throttled to Nominatim's 1 req/s ToS limit and
+    limited to :data:`_GEOCODE_MAX_INFLIGHT` concurrent threads.
     """
     if not place:
         return None
@@ -123,8 +136,13 @@ def geocode_place(place: str) -> Optional[tuple[float, float]]:
     if cached is not None:
         _geocode_cache.move_to_end(key)
         return cached
+
+    if not _geocode_gate.acquire(timeout=_GEOCODE_WAIT_SECONDS):
+        logger.warning("Geocoding busy (%d in flight) — skipping lookup for '%s'",
+                       _GEOCODE_MAX_INFLIGHT, place)
+        return None
     try:
-        location = _get_geocode_fn()(place, timeout=10)
+        location = _get_geocode_fn()(place, timeout=_GEOCODE_TIMEOUT_SECONDS)
         if location:
             coords = (location.latitude, location.longitude)
             _geocode_cache[key] = coords   # cache successes only — transient failures retry
@@ -133,6 +151,8 @@ def geocode_place(place: str) -> Optional[tuple[float, float]]:
             return coords
     except Exception as e:
         logger.warning("Geocoding failed for '%s': %s", place, e)
+    finally:
+        _geocode_gate.release()
     return None
 
 

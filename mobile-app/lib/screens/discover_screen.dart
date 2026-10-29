@@ -91,6 +91,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           child: IconButton(
                             onPressed: () => Navigator.of(context).maybePop(),
                             icon: const Icon(Icons.arrow_back),
+                            tooltip: 'Back',
                             color: AppColors.textSecondary,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(

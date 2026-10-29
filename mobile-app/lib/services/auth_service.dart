@@ -203,30 +203,6 @@ class AuthService {
     }
   }
 
-  /// Deletes the Firebase credential. The server deletes its own copy of the
-  /// profile separately, so call this only after that succeeds.
-  static Future<AuthResult> deleteAccount() async {
-    try {
-      await _auth.currentUser?.delete();
-      return _success;
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        return (
-          ok: false,
-          error:
-              'For your security, please sign in again before deleting your account.',
-        );
-      }
-      // _message() is sign-in copy and would wrongly blame the password here.
-      return (
-        ok: false,
-        error: 'Could not delete your account. Please try again.',
-      );
-    } catch (e) {
-      return (ok: false, error: _generic(e));
-    }
-  }
-
   static String _message(FirebaseAuthException e) {
     switch (e.code) {
       case 'invalid-email':

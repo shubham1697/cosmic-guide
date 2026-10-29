@@ -477,11 +477,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               )
             else if (horoscope == null)
-              const Text(
-                'Unable to load your reading. Pull down to refresh.',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 14),
+              Text(
+                ApiService.lastError.value?.message ??
+                    'Unable to load your reading. Pull down to refresh.',
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 14,
+                ),
               )
             else ...[
+              if (horoscope.isFallback) _buildFallbackNote(),
               if (horoscope.band != null) _buildBandWhy(horoscope),
               _buildHoroscopePreview(horoscope.general),
               const SizedBox(height: 16),
@@ -523,6 +528,33 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _forecastBySystem[system] = res?.points ?? const <ForecastPoint>[];
     });
+  }
+
+  /// Shown when the server served canned filler because it could not generate
+  /// or retrieve a real reading. Passing that off as today's horoscope is the
+  /// kind of thing that makes an astrology app feel fake.
+  Widget _buildFallbackNote() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 14, color: AppColors.textMuted),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              "Showing a general reading — today's personalised text isn't "
+              'available right now.',
+              style: TextStyle(
+                color: AppColors.textMuted.withAlpha(220),
+                fontSize: 12,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// A coloured band chip ("Mixed · 54%") plus the one-line "why" for the

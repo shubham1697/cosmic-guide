@@ -46,6 +46,12 @@ class UserProfileUpdate(CamelModel):
 
 # --- Horoscope Schemas ---
 
+#: Where a reading came from. ``fallback`` means the LLM and the cache were both
+#: unavailable and the text is static filler — clients should say so rather than
+#: present it as today's reading, and operators should alert on it.
+SOURCE_PATTERN = r"^(chart|ai|cache|fallback)$"
+
+
 class HoroscopeResponse(CamelModel):
     sign: str
     date: str
@@ -62,6 +68,7 @@ class HoroscopeResponse(CamelModel):
     # Deterministic day label + one-line "why" — present only for personalized readings.
     band: Optional[str] = None
     mood_summary: Optional[str] = None
+    source: str = Field(default="ai", pattern=SOURCE_PATTERN)
 
 
 # --- Forecast Schemas ---
@@ -117,6 +124,7 @@ class CompatibilityResponse(CamelModel):
     love_advice: str
     strengths_together: str
     challenges: str
+    source: str = Field(default="ai", pattern=SOURCE_PATTERN)
 
 
 # --- Kundli Schemas ---

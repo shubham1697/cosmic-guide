@@ -11,14 +11,19 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-// Release signing comes from android/key.properties (gitignored). Without it
-// the release build falls back to debug keys, which the Play Store rejects.
+// Release signing comes from android/key.properties (gitignored). Falling back
+// to the debug keystore silently produces an artifact Play rejects, so a real
+// release build fails instead; set ALLOW_DEBUG_SIGNED_RELEASE=true only for a
+// local smoke test of the release configuration.
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
 val hasReleaseSigning = keystorePropertiesFile.exists()
 if (hasReleaseSigning) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+val allowDebugSignedRelease =
+    (project.findProperty("ALLOW_DEBUG_SIGNED_RELEASE") as String?)?.toBoolean() == true
+            || System.getenv("ALLOW_DEBUG_SIGNED_RELEASE")?.toBoolean() == true
 
 android {
     namespace = "com.cosmicguide.cosmic_guide"
@@ -59,6 +64,16 @@ android {
             signingConfig = if (hasReleaseSigning) {
                 signingConfigs.getByName("release")
             } else {
+                if (!allowDebugSignedRelease) {
+                    throw GradleException(
+                        "No release signing config: android/key.properties is missing. " +
+                        "A debug-signed release is rejected by Play and breaks Google " +
+                        "Sign-In (different SHA-1). Create the upload keystore and " +
+                        "key.properties, or pass -PALLOW_DEBUG_SIGNED_RELEASE=true to " +
+                        "build an unpublishable test artifact."
+                    )
+                }
+                logger.warn("WARNING: signing the release build with DEBUG keys — not publishable.")
                 signingConfigs.getByName("debug")
             }
             isMinifyEnabled = true

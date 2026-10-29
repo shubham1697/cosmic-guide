@@ -28,7 +28,9 @@ import main  # noqa: E402
 import security  # noqa: E402
 from db.database import SessionLocal  # noqa: E402
 from db.models import User  # noqa: E402
-from security import AuthedUser, require_user  # noqa: E402
+from security import AuthedUser, require_fresh_user, require_user  # noqa: E402
+
+main.prepare_schema()  # lifespan is not run by a bare TestClient
 
 client = TestClient(main.app)
 
@@ -63,10 +65,10 @@ def test_fails_closed_without_service_account():
 
 
 def _as_user(uid: str, email: str = "a@b.co"):
-    """Impersonate a verified caller by overriding the dependency."""
-    main.app.dependency_overrides[require_user] = lambda: AuthedUser(
-        uid=uid, email=email, email_verified=True, name="Tester"
-    )
+    """Impersonate a verified caller by overriding the dependencies."""
+    caller = AuthedUser(uid=uid, email=email, email_verified=True, name="Tester")
+    main.app.dependency_overrides[require_user] = lambda: caller
+    main.app.dependency_overrides[require_fresh_user] = lambda: caller
 
 
 def test_profile_round_trip_is_scoped_to_the_caller():
@@ -112,13 +114,33 @@ def test_invalid_update_is_rejected():
         main.app.dependency_overrides.clear()
 
 
+def test_null_clears_a_field():
+    """An explicit null must clear the value — it is how a user withdraws a
+    birth detail. `exclude_none` once made that indistinguishable from omitted."""
+    try:
+        _as_user("uid-erin")
+        client.put("/api/v1/users/me", json={"birthTime": "06:30", "birthPlace": "Pune"})
+        cleared = client.put("/api/v1/users/me", json={"birthTime": None})
+        assert cleared.status_code == 200, cleared.text
+        assert cleared.json()["birthTime"] is None, "null did not clear the field"
+        assert cleared.json()["birthPlace"] == "Pune", "omitted field was not preserved"
+        print("✓ an explicit null clears a profile field; omitted fields are untouched")
+    finally:
+        main.app.dependency_overrides.clear()
+
+
 def test_delete_removes_the_profile_row():
+    import api.users as users_api
+
+    original = users_api._remove_firebase_credential
     try:
         _as_user("uid-dave")
         assert client.get("/api/v1/users/me").status_code == 200
 
+        users_api._remove_firebase_credential = lambda uid: True
         r = client.delete("/api/v1/users/me")
         assert r.status_code == 200, r.text
+        assert r.json()["credentialRemoved"] is True
 
         session = SessionLocal()
         try:
@@ -130,13 +152,57 @@ def test_delete_removes_the_profile_row():
         assert remaining == 0, "profile row survived account deletion"
         print("✓ account deletion removes the stored profile")
     finally:
+        users_api._remove_firebase_credential = original
+        main.app.dependency_overrides.clear()
+
+
+def test_delete_keeps_everything_when_the_credential_cannot_be_removed():
+    """Deleting the profile but leaving the login alive is the worst outcome:
+    the data is gone and the account still works. Nothing may be committed
+    until the credential is actually removed."""
+    import api.users as users_api
+
+    original = users_api._remove_firebase_credential
+    try:
+        _as_user("uid-frank")
+        assert client.get("/api/v1/users/me").status_code == 200
+
+        users_api._remove_firebase_credential = lambda uid: False
+        r = client.delete("/api/v1/users/me")
+        assert r.status_code == 502, f"expected 502, got {r.status_code}"
+
+        session = SessionLocal()
+        try:
+            remaining = session.query(User).filter(
+                User.firebase_uid == "uid-frank"
+            ).count()
+        finally:
+            session.close()
+        assert remaining == 1, "profile was destroyed even though the login survived"
+        print("✓ a failed credential delete leaves the account completely intact")
+    finally:
+        users_api._remove_firebase_credential = original
         main.app.dependency_overrides.clear()
 
 
 def test_content_routes_stay_public():
     assert client.get("/api/v1/horoscope/today?zodiac_sign=Leo").status_code == 200
     assert client.get("/api/v1/stories").status_code == 200
-    print("✓ content routes remain reachable without signing in")
+    print("✓ generic content routes remain reachable without signing in")
+
+
+def test_personalized_reading_requires_sign_in():
+    """A birth triple is a guaranteed cache miss, i.e. one geocode plus one LLM
+    call chosen by the caller — that must not be available anonymously."""
+    r = client.get("/api/v1/horoscope/today",
+                   params={"zodiac_sign": "Leo", "birthDate": "1990-08-05"})
+    assert r.status_code == 401, f"personalized reading was served anonymously: {r.status_code}"
+    assert client.get("/api/v1/horoscope/forecast",
+                      params={"birthDate": "1990-08-05"}).status_code == 401
+    assert client.post("/api/v1/chart/birth",
+                       json={"birthDate": "1990-08-05"}).status_code == 401
+    assert client.get("/api/v1/vedic/home-summary").status_code == 401
+    print("✓ personalized/expensive routes require sign-in")
 
 
 if __name__ == "__main__":
@@ -147,8 +213,11 @@ if __name__ == "__main__":
         test_fails_closed_without_service_account()
         test_profile_round_trip_is_scoped_to_the_caller()
         test_invalid_update_is_rejected()
+        test_null_clears_a_field()
         test_delete_removes_the_profile_row()
+        test_delete_keeps_everything_when_the_credential_cannot_be_removed()
         test_content_routes_stay_public()
+        test_personalized_reading_requires_sign_in()
         print("All passed.")
     finally:
         os.unlink(_tmp_db.name)

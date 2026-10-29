@@ -272,3 +272,48 @@ def ensure_tradition_is_binary(engine: Engine, logger=None) -> None:
         except Exception as exc:  # best-effort: never block startup on a schema patch
             if logger:
                 logger.warning("%s.tradition migration skipped: %s", table, exc)
+
+
+def ensure_story_title_unique(engine: Engine, logger=None) -> None:
+    """Enforce one story per (title, category).
+
+    The populator inserts generated articles without checking for an existing
+    one, so a re-run could put visible duplicates in the Discover feed.
+    """
+    _ensure_unique_index(engine, "stories", ["title", "category"], "uq_story_title", logger)
+
+
+# Tables that were designed but never wired up. ``kundli_reports`` is the
+# important one: it was shaped to hold a *partner's* full name, birth date,
+# birth time and birth place — personal data for someone who never consented
+# and has no account — and create_all() recreated it on every boot.
+_UNUSED_TABLES = ("kundli_reports", "fortune_history")
+
+
+def drop_unused_tables(engine: Engine, logger=None) -> None:
+    """Drop the dead tables, but only while they are still empty.
+
+    Refusing to drop a populated table means an operator who started using one
+    of them does not silently lose the data; they get a log line instead.
+    """
+    for table in _UNUSED_TABLES:
+        try:
+            inspector = inspect(engine)
+            if table not in inspector.get_table_names():
+                continue
+            with engine.begin() as conn:
+                rows = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+                if rows:
+                    if logger:
+                        logger.error(
+                            "Table %s is unused by the application but holds %d row(s); "
+                            "leaving it in place. Drop it manually once reviewed.",
+                            table, rows,
+                        )
+                    continue
+                conn.execute(text(f"DROP TABLE {table}"))
+            if logger:
+                logger.info("Schema migration: dropped unused empty table `%s`", table)
+        except Exception as exc:  # best-effort: never block startup on a schema patch
+            if logger:
+                logger.warning("%s drop skipped: %s", table, exc)

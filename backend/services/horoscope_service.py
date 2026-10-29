@@ -63,6 +63,8 @@ def _mock_horoscope(zodiac_sign: str, today_str: str) -> dict:
         "lucky_number": str(template.get("lucky_number", "9")),
         "lucky_color": str(template.get("lucky_color", "Purple")),
         "mood": str(template.get("mood", "Intuitive")),
+        # Static filler, not a reading for this date — say so.
+        "source": "fallback",
     }
 
 
@@ -156,6 +158,7 @@ def _get_personalized_horoscope(zodiac_sign: str, system: str, today, today_str:
         "date": today_str,
         **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
         "personalized": True,
+        "source": "chart",
     }
     _personalized_cache[cache_key] = result
     return result, day
@@ -297,7 +300,7 @@ def _get_generic_horoscope(zodiac_sign: str, system: str, db, today, today_str: 
     cache_key = (zodiac_sign, system, today_str)
     if cache_key in _horoscope_cache:
         logger.info("get_horoscope  source=memory  sign=%s  system=%s  date=%s", zodiac_sign, system, today_str)
-        return _horoscope_cache[cache_key]
+        return {**_horoscope_cache[cache_key], "source": "cache"}
 
     # ── 2. DB cache ──────────────────────────────────────────────────────────
     if db is not None:
@@ -329,6 +332,7 @@ def _get_generic_horoscope(zodiac_sign: str, system: str, db, today, today_str: 
                     "lucky_number": str(cached.lucky_number),
                     "lucky_color": cached.lucky_color,
                     "mood": cached.mood,
+                    "source": "cache",
                 }
                 _horoscope_cache[cache_key] = result
                 return result
@@ -376,6 +380,7 @@ def _get_generic_horoscope(zodiac_sign: str, system: str, db, today, today_str: 
                 "sign": zodiac_sign,
                 "date": today_str,
                 **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
+                "source": "ai",
             }
             _horoscope_cache[cache_key] = result
             return result
@@ -417,6 +422,7 @@ def _periodic_to_dict(row, period_key: str) -> dict:
         "lucky_number": str(row.lucky_number),
         "lucky_color": row.lucky_color,
         "mood": row.mood,
+        "source": "cache",
     }
 
 
@@ -443,7 +449,7 @@ def get_periodic_horoscope(zodiac_sign: str, period: str,
     if cache_key in _periodic_cache:
         logger.info("get_periodic_horoscope  source=memory  sign=%s  period=%s  key=%s",
                     zodiac_sign, period, period_key)
-        return _periodic_cache[cache_key]
+        return {**_periodic_cache[cache_key], "source": "cache"}
 
     # ── 2. DB cache ──────────────────────────────────────────────────────────
     if db is not None:
@@ -511,6 +517,7 @@ def get_periodic_horoscope(zodiac_sign: str, period: str,
                 "sign": zodiac_sign,
                 "date": period_key,
                 **{k: v for k, v in ai_data.items() if k != "zodiac_sign"},
+                "source": "ai",
             }
             _periodic_cache[cache_key] = result
             return result

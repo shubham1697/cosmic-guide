@@ -15,6 +15,10 @@ class ScoreRing extends StatelessWidget {
   final double size;
   final double strokeWidth;
 
+  /// Spoken description. Defaults to the label and caption, which is what a
+  /// sighted user reads off the ring.
+  final String? semanticLabel;
+
   const ScoreRing({
     super.key,
     required this.value,
@@ -23,60 +27,67 @@ class ScoreRing extends StatelessWidget {
     required this.color,
     this.size = 150,
     this.strokeWidth = 12,
+    this.semanticLabel,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: value.clamp(0.0, 1.0)),
-        duration: const Duration(milliseconds: 900),
-        curve: Curves.easeOutCubic,
-        builder: (context, animatedValue, _) {
-          return CustomPaint(
-            painter: _RingPainter(
-              value: animatedValue,
-              color: color,
-              strokeWidth: strokeWidth,
-            ),
-            child: Center(
-              child: Padding(
-                padding: EdgeInsets.all(strokeWidth + 6),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: size * 0.28,
-                          fontWeight: FontWeight.bold,
-                          color: color,
-                          height: 1.0,
-                        ),
-                      ),
-                      if (caption != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          caption!,
-                          style: const TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
+    return Semantics(
+      label: semanticLabel ?? (caption == null ? label : '$caption: $label'),
+      readOnly: true,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: value.clamp(0.0, 1.0)),
+            duration: const Duration(milliseconds: 900),
+            curve: Curves.easeOutCubic,
+            builder: (context, animatedValue, _) {
+              return CustomPaint(
+                painter: _RingPainter(
+                  value: animatedValue,
+                  color: color,
+                  strokeWidth: strokeWidth,
+                ),
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(strokeWidth + 6),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            label,
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: size * 0.28,
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                              height: 1.0,
+                            ),
                           ),
-                        ),
-                      ],
-                    ],
+                          if (caption != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              caption!,
+                              style: const TextStyle(
+                                color: AppColors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
+              );
+            },
+          ),
+        ),
       ),
     );
   }

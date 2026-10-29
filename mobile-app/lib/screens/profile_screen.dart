@@ -52,6 +52,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// instantly (no flash of zeros) while fresh numbers load.
   ReadingStats _lastStats = const ReadingStats.empty();
 
+  /// Account deletion is in flight; a second tap would start a second,
+  /// confusing delete sequence.
+  bool _deleting = false;
+
   @override
   void initState() {
     super.initState();
@@ -603,6 +607,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _deleteAccount() async {
+    if (_deleting) return;
     final confirmed = await _confirm(
       title: 'Delete your account?',
       message:
@@ -613,9 +618,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
     if (!confirmed || !mounted) return;
 
-    // Prove identity first. Firebase rejects deletion on a stale sign-in, and
-    // doing this after the server delete would strand the user with their data
-    // gone but the account still live.
+    // Prove identity first. The server rejects a stale session on this route,
+    // and re-authenticating here means the user is asked once, up front.
     String? password;
     if (AuthService.usesPassword) {
       password = await _askPassword();
@@ -623,32 +627,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     final messenger = ScaffoldMessenger.of(context);
-
-    final reauth = await AuthService.reauthenticate(password: password);
-    if (!reauth.ok) {
-      if (reauth.error != null) {
-        messenger.showSnackBar(SnackBar(content: Text(reauth.error!)));
+    setState(() => _deleting = true);
+    try {
+      final reauth = await AuthService.reauthenticate(password: password);
+      if (!reauth.ok) {
+        if (reauth.error != null) {
+          messenger.showSnackBar(SnackBar(content: Text(reauth.error!)));
+        }
+        return;
       }
-      return;
+
+      // One server-side operation removes the profile, the device tokens and
+      // the sign-in credential together, and only commits once the credential
+      // is actually gone. A false here means nothing was deleted.
+      final deleted = await ApiService.deleteProfile();
+      if (!deleted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your account was not deleted. Nothing was removed — '
+              'please try again.',
+            ),
+          ),
+        );
+        return;
+      }
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
 
-    // Server copy first: deleting the credential before it would leave the
-    // stored profile with no way to authenticate to it again.
-    final serverDeleted = await ApiService.deleteProfile();
-    if (!serverDeleted) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Could not reach the server. Please try again.'),
-        ),
-      );
-      return;
-    }
-
-    final result = await AuthService.deleteAccount();
-    if (!result.ok && result.error != null) {
-      messenger.showSnackBar(SnackBar(content: Text(result.error!)));
-      return;
-    }
     await AuthService.signOut();
   }
 

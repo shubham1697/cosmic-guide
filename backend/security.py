@@ -39,10 +39,8 @@ class AuthedUser:
         self.name = name
 
 
-def require_user(
-    authorization: str | None = Header(default=None, alias="Authorization"),
-) -> AuthedUser:
-    """Resolve the caller from an ``Authorization: Bearer <firebase-id-token>``.
+def _verify_bearer(authorization: str | None, *, check_revoked: bool) -> AuthedUser:
+    """Resolve the caller behind an ``Authorization: Bearer <firebase-id-token>``.
 
     Fails closed: if the service account is missing the token cannot be
     verified, so the request is refused rather than trusted.
@@ -67,7 +65,7 @@ def require_user(
     from firebase_admin import auth as fb_auth
 
     try:
-        claims = fb_auth.verify_id_token(token, app=app)
+        claims = fb_auth.verify_id_token(token, app=app, check_revoked=check_revoked)
     except Exception as exc:
         # Covers expired, revoked, malformed and wrong-project tokens alike.
         logger.info("Rejected ID token: %s", type(exc).__name__)
@@ -83,3 +81,36 @@ def require_user(
         email_verified=bool(claims.get("email_verified")),
         name=claims.get("name"),
     )
+
+
+def require_user(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> AuthedUser:
+    """Resolve the signed-in caller. Signature verification only (no round trip)."""
+    return _verify_bearer(authorization, check_revoked=False)
+
+
+def require_fresh_user(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> AuthedUser:
+    """Like :func:`require_user`, but also rejects a *revoked* session.
+
+    An ID token stays signature-valid for up to an hour after the user changes
+    their password or signs a device out, which is far too long a window for
+    the routes that modify or destroy an account. Costs one Firebase lookup, so
+    it is reserved for those routes.
+    """
+    return _verify_bearer(authorization, check_revoked=True)
+
+
+def optional_user(
+    authorization: str | None = Header(default=None, alias="Authorization"),
+) -> AuthedUser | None:
+    """Resolve the caller when a token is presented, ``None`` when none is.
+
+    A *present but invalid* token is still rejected — only the complete absence
+    of the header counts as anonymous.
+    """
+    if not authorization:
+        return None
+    return _verify_bearer(authorization, check_revoked=False)

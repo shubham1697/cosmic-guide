@@ -1,7 +1,7 @@
 """
 Unified DB service for CosmicGuide — full CRUD layer for every entity.
 
-Covers: Horoscopes, TarotCards, FortunePool, Compatibility, Stories, FortuneHistory.
+Covers: Horoscopes, TarotCards, FortunePool, Compatibility, Stories.
 All methods accept a SQLAlchemy Session and return plain dicts / lists.
 """
 
@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from database.models import (
-    Horoscope, PeriodicHoroscope, TarotCard, FortunePool, Compatibility, Story, FortuneHistory,
+    Horoscope, PeriodicHoroscope, TarotCard, FortunePool, Compatibility, Story,
 )
 from database.config import get_logger
 
@@ -457,51 +457,6 @@ def _story_to_dict(row: Story) -> dict:
         "published_at": row.published_at.isoformat() if row.published_at else None,
         "is_featured": row.is_featured,
     }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Fortune History
-# ─────────────────────────────────────────────────────────────────────────────
-
-def save_fortune_history(db: Session, user_id: int, zodiac_sign: str,
-                         topic: str, mood: str, fortune_text: str,
-                         commit: bool = True) -> bool:
-    try:
-        db.add(FortuneHistory(
-            user_id=user_id,
-            zodiac_sign=zodiac_sign,
-            topic=topic,
-            mood=mood,
-            fortune_text=fortune_text,
-        ))
-        if commit:
-            db.commit()
-        return True
-    except Exception as exc:
-        logger.error("save_fortune_history user=%d: %s", user_id, exc)
-        db.rollback()
-        return False
-
-
-def get_fortune_history(db: Session, user_id: int, limit: int = 20) -> list[dict]:
-    rows = (
-        db.query(FortuneHistory)
-        .filter(FortuneHistory.user_id == user_id)
-        .order_by(FortuneHistory.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "id": r.id,
-            "zodiac_sign": r.zodiac_sign,
-            "topic": r.topic,
-            "mood": r.mood,
-            "fortune_text": r.fortune_text,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-        }
-        for r in rows
-    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

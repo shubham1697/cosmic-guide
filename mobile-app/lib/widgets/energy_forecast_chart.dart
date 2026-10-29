@@ -35,24 +35,45 @@ class EnergyForecastChart extends StatelessWidget {
   Widget build(BuildContext context) {
     if (points.length < 2) return const SizedBox.shrink();
     final duration = Duration(milliseconds: compact ? 650 : 900);
-    return SizedBox(
-      height: compact ? 44 : 180,
-      width: double.infinity,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: duration,
-        curve: Curves.easeOutCubic,
-        builder: (context, t, _) => CustomPaint(
-          painter: _ForecastPainter(
-            points: points,
-            progress: t,
-            compact: compact,
-            bestDate: bestDay?.date,
+    return Semantics(
+      label: _describe(),
+      readOnly: true,
+      child: SizedBox(
+        height: compact ? 44 : 180,
+        width: double.infinity,
+        child: TweenAnimationBuilder<double>(
+          tween: Tween(begin: 0, end: 1),
+          duration: duration,
+          curve: Curves.easeOutCubic,
+          builder: (context, t, _) => CustomPaint(
+            painter: _ForecastPainter(
+              points: points,
+              progress: t,
+              compact: compact,
+              bestDate: bestDay?.date,
+            ),
+            size: Size.infinite,
           ),
-          size: Size.infinite,
         ),
       ),
     );
+  }
+
+  /// Textual equivalent of the line: without it a screen-reader user gets
+  /// nothing at all from one of the product's headline outputs.
+  String _describe() {
+    final first = points.first;
+    final buffer = StringBuffer(
+      'Energy forecast over ${points.length} days. '
+      'Today ${first.score}, ${first.band.toLowerCase()}.',
+    );
+    final best = bestDay;
+    if (best != null) {
+      buffer.write(
+        ' Best day ${best.date.day}/${best.date.month} at ${best.score}.',
+      );
+    }
+    return buffer.toString();
   }
 }
 

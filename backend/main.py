@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -9,8 +11,8 @@ from fastapi.responses import JSONResponse
 from config import settings
 from logger import configure_logging, get_logger
 from security import require_admin
-from rate_limit import rate_limit_middleware
-from audit import audit_inbound, new_request_id, set_request_id
+from rate_limit import client_identity, rate_limit_middleware
+from audit import audit_inbound, new_request_id, redact_query, set_request_id
 from sqlalchemy.exc import IntegrityError
 from db.database import engine, Base, get_db
 from db import models  # noqa: F401 — register ORM models on Base.metadata before create_all
@@ -22,6 +24,8 @@ from shared.db_migrations import (
     ensure_users_firebase_shape,
     ensure_device_token_owner_column,
     ensure_tradition_is_binary,
+    ensure_story_title_unique,
+    drop_unused_tables,
 )
 from api import horoscope, tarot, fortune, compatibility, kundli, stories, chart, vedic, notifications, users
 
@@ -37,27 +41,87 @@ if not settings.ADMIN_API_KEY:
         "routes are DISABLED (503). Set ADMIN_API_KEY to enable them."
     )
 
-# Runs before create_all so the replacement table is built in the same startup.
-ensure_users_firebase_shape(engine, logger)
+# Set once schema preparation has succeeded; /ready reports it.
+_schema_ready = False
+_SCHEMA_ATTEMPTS = 5
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
-# Patch pre-existing tables for columns added after they were first created
-# (create_all() only creates missing tables — it never alters existing ones).
-ensure_horoscope_system_column(engine, logger)
-ensure_compatibility_canonical(engine, logger)
-ensure_horoscope_lucky_number_string(engine, logger)
-ensure_cache_unique_indexes(engine, logger)
-ensure_device_token_owner_column(engine, logger)
-ensure_tradition_is_binary(engine, logger)
+def prepare_schema() -> None:
+    """Create missing tables and patch the ones that already exist.
+
+    ``create_all()`` only creates missing tables — it never alters an existing
+    one — so every column or constraint added after a table shipped needs its
+    own idempotent helper here.
+    """
+    # Runs before create_all so the replacement table is built in the same pass.
+    ensure_users_firebase_shape(engine, logger)
+    Base.metadata.create_all(bind=engine)
+    ensure_horoscope_system_column(engine, logger)
+    ensure_compatibility_canonical(engine, logger)
+    ensure_horoscope_lucky_number_string(engine, logger)
+    ensure_cache_unique_indexes(engine, logger)
+    ensure_device_token_owner_column(engine, logger)
+    ensure_tradition_is_binary(engine, logger)
+    ensure_story_title_unique(engine, logger)
+    drop_unused_tables(engine, logger)
+
+
+async def _prepare_schema_with_retry() -> None:
+    """Prepare the schema, retrying with backoff.
+
+    A transient database blip at boot used to abort the import and crash-loop
+    the container; the app now starts degraded instead and ``/ready`` reports
+    it, so the orchestrator keeps traffic away without killing the process.
+    """
+    global _schema_ready
+    delay = 1.0
+    for attempt in range(1, _SCHEMA_ATTEMPTS + 1):
+        try:
+            await asyncio.to_thread(prepare_schema)
+            _schema_ready = True
+            return
+        except Exception as exc:
+            if attempt == _SCHEMA_ATTEMPTS:
+                logger.error(
+                    "Schema preparation failed after %d attempts (%s) — starting "
+                    "degraded; /ready will report not-ready.", attempt, exc,
+                )
+                return
+            logger.warning(
+                "Schema preparation attempt %d/%d failed (%s); retrying in %.0fs.",
+                attempt, _SCHEMA_ATTEMPTS, exc, delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await _prepare_schema_with_retry()
+    from services.scheduler import start_scheduler
+    start_scheduler()
+    try:
+        yield
+    finally:
+        from services.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+        engine.dispose()   # release pooled DB connections on shutdown
+
 
 # Initialize FastAPI app
+_docs_enabled = settings.ENABLE_DOCS
+if not _docs_enabled:
+    logger.info("OpenAPI docs are disabled (set ENABLE_DOCS=true to publish them).")
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # The schema advertises every route, parameter and admin path to anonymous
+    # callers, so it stays off unless an operator opts in.
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+    lifespan=lifespan,
 )
 
 # CORS middleware
@@ -90,19 +154,16 @@ async def log_requests(request: Request, call_next):
     start = time.perf_counter()
     method = request.method
     path = request.url.path
-    query = str(request.url.query)
+    # Birth date/time/place travel as query parameters; never log them raw.
+    query = redact_query(str(request.url.query))
 
     # Correlation id — reuse an inbound X-Request-ID if the caller supplied one.
     request_id = request.headers.get("x-request-id") or new_request_id()
     set_request_id(request_id)
 
-    # Prefer the real client IP when behind a proxy/load balancer.
-    forwarded_for = request.headers.get("x-forwarded-for")
-    client_ip = (
-        forwarded_for.split(",")[0].strip()
-        if forwarded_for
-        else (request.client.host if request.client else "unknown")
-    )
+    # Same rule as the rate limiter: X-Forwarded-For is only believed behind a
+    # proxy we control, otherwise any caller could forge the audit attribution.
+    client_ip = client_identity(request)
     user_agent = request.headers.get("user-agent", "")
     req_len = request.headers.get("content-length")
     request_bytes = int(req_len) if req_len and req_len.isdigit() else None
@@ -150,6 +211,29 @@ async def log_requests(request: Request, call_next):
         )
 
 
+# ── Security headers ─────────────────────────────────────────────────────────
+# Added last so it is the outermost layer and also stamps rate-limit rejections.
+_SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(header, value)
+    # Only meaningful once TLS terminates in front of the app.
+    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
 # Global error handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -167,6 +251,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Health check
 @app.get("/health", tags=["Health"])
 def health_check():
+    """Liveness: is the process up? Always cheap — never touches a dependency."""
     from services.ai_service import ai_available
     ai = ai_available()
     logger.debug("Health check — ai_enabled=%s", ai)
@@ -176,6 +261,35 @@ def health_check():
         "log_level": settings.LOG_LEVEL,
         "ai_enabled": ai,
     }
+
+
+@app.get("/ready", tags=["Health"])
+def readiness_check():
+    """Readiness: can this instance actually serve? Checks the database and the
+    schema/scheduler state, and answers 503 when it cannot."""
+    from sqlalchemy import text
+    from services.scheduler import is_running as scheduler_running
+
+    database_ok = True
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:
+        database_ok = False
+        logger.warning("Readiness check — database unreachable: %s", exc)
+
+    body = {
+        "status": "ready" if (database_ok and _schema_ready) else "not_ready",
+        "database": "ok" if database_ok else "unreachable",
+        "schema": "ready" if _schema_ready else "not_ready",
+        "scheduler": (
+            "running" if scheduler_running()
+            else ("disabled" if not settings.ENABLE_SCHEDULER else "stopped")
+        ),
+    }
+    if body["status"] != "ready":
+        return JSONResponse(status_code=503, content=body)
+    return body
 
 
 # Content status endpoint — check what's pre-populated
@@ -532,19 +646,6 @@ app.include_router(chart.router, prefix=settings.API_PREFIX)
 app.include_router(vedic.router, prefix=settings.API_PREFIX)
 app.include_router(notifications.router, prefix=settings.API_PREFIX)
 app.include_router(users.router, prefix=settings.API_PREFIX)
-
-
-@app.on_event("startup")
-def _on_startup():
-    from services.scheduler import start_scheduler
-    start_scheduler()
-
-
-@app.on_event("shutdown")
-def _on_shutdown():
-    from services.scheduler import shutdown_scheduler
-    shutdown_scheduler()
-    engine.dispose()   # release pooled DB connections on shutdown
 
 
 @app.get("/", tags=["Root"])

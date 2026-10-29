@@ -43,6 +43,7 @@ def _mock_compatibility(sign1: str, sign2: str, score: int, elem1: str, elem2: s
         "love_advice": template["love_advice"],
         "strengths_together": template["strengths_together"],
         "challenges": template["challenges"],
+        "source": "fallback",
     }
 
 
@@ -92,6 +93,7 @@ def get_compatibility(sign1: str, sign2: str, db=None) -> dict:
                     "love_advice":        _safe_str(cached.love_advice),
                     "strengths_together": _safe_str(cached.strengths),
                     "challenges":         _safe_str(cached.challenges),
+                    "source": "cache",
                 }
             else:
                 log_db_query("SELECT", "compatibility", f"where sign1={s_a} AND sign2={s_b}", rows_affected=0, elapsed_ms=elapsed_ms)
@@ -138,6 +140,7 @@ def get_compatibility(sign1: str, sign2: str, db=None) -> dict:
                 "love_advice":        _safe_str(ai_data.get("love_advice")),
                 "strengths_together": _safe_str(ai_data.get("strengths_together")),
                 "challenges":         _safe_str(ai_data.get("challenges")),
+                "source": "ai",
             }
         logger.warning("get_compatibility  AI returned None  %s x %s", sign1, sign2)
     except Exception as exc:

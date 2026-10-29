@@ -198,6 +198,13 @@ def test_malformed_input_is_4xx_not_500():
         from fastapi.testclient import TestClient
 
         import main
+        from security import AuthedUser, require_user
+
+        main.prepare_schema()  # lifespan is not run by a bare TestClient
+        # These routes require sign-in; the case under test is input validation.
+        main.app.dependency_overrides[require_user] = lambda: AuthedUser(
+            uid="uid-test", email="t@example.com", email_verified=True, name="Test"
+        )
 
         bcs.geocode_place = lambda p: _FIXED_COORDS
         vs.geocode_place = lambda p: _FIXED_COORDS
@@ -229,6 +236,8 @@ def test_malformed_input_is_4xx_not_500():
         assert r.status_code == 200 and r.json()["hasAccurateHouses"] is True
         print("✓ malformed dates/times return 4xx (were 500); valid input unaffected")
     finally:
+        import main as _main
+        _main.app.dependency_overrides.clear()
         os.unlink(tmp.name)
 
 

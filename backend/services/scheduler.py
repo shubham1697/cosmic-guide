@@ -73,3 +73,8 @@ def shutdown_scheduler() -> None:
         _scheduler.shutdown(wait=False)
         _scheduler = None
         logger.info("Scheduler stopped.")
+
+
+def is_running() -> bool:
+    """Whether the background scheduler is live (reported by /ready)."""
+    return _scheduler is not None and _scheduler.running

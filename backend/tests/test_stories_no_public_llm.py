@@ -26,6 +26,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 import main  # noqa: E402
 import services.story_service as story_service  # noqa: E402
 
+main.prepare_schema()  # lifespan is not run by a bare TestClient
+
 client = TestClient(main.app)
 
 

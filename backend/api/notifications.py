@@ -71,7 +71,12 @@ def register_device(
 
 @router.post("/unregister")
 def unregister_device(payload: TokenRef, db: Session = Depends(get_db)):
-    """Remove a device token (e.g. on logout)."""
+    """Remove a device token (e.g. on logout).
+
+    Deliberately open — sign-out can happen after the session is already gone,
+    and holding the token is the only capability needed to drop it. The reply
+    is a constant so it cannot be used to probe whether a token is registered.
+    """
     logger.info("→ POST /notifications/unregister")
     deleted = (
         db.query(DeviceToken)
@@ -80,16 +85,29 @@ def unregister_device(payload: TokenRef, db: Session = Depends(get_db)):
     )
     db.commit()
     logger.info("← POST /notifications/unregister deleted=%d", deleted)
-    return {"status": "ok", "deleted": deleted}
+    return {"status": "ok"}
 
 
 @router.put("/preferences")
-def update_preferences(payload: NotificationPreferences, db: Session = Depends(get_db)):
-    """Toggle the daily horoscope reminder for a device."""
+def update_preferences(
+    payload: NotificationPreferences,
+    caller: AuthedUser = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Toggle the daily horoscope reminder for one of the caller's devices."""
     logger.info("→ PUT /notifications/preferences enabled=%s", payload.daily_horoscope_enabled)
-    device = db.query(DeviceToken).filter(DeviceToken.token == payload.token).first()
+    device = (
+        db.query(DeviceToken)
+        .filter(
+            DeviceToken.token == payload.token,
+            DeviceToken.firebase_uid == caller.uid,
+        )
+        .first()
+    )
     if device is None:
-        logger.info("← PUT /notifications/preferences token not found")
+        # Also the answer when the token belongs to somebody else: knowing the
+        # token must not be enough to silence another account's reminders.
+        logger.info("← PUT /notifications/preferences token not found for caller")
         return {"status": "not_found"}
     device.daily_horoscope_enabled = payload.daily_horoscope_enabled
     device.updated_at = datetime.now(timezone.utc)

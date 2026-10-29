@@ -188,6 +188,7 @@ class _CityAutocompleteFieldState extends State<CityAutocompleteField> {
                             color: AppColors.textMuted,
                             size: 18,
                           ),
+                          tooltip: 'Clear',
                           onPressed: _clearField,
                         )
                       : null),

@@ -31,6 +31,14 @@ from fastapi.testclient import TestClient   # noqa: E402
 import pydantic                             # noqa: E402
 import main                                 # noqa: E402
 from schemas import BirthDetails            # noqa: E402
+from security import AuthedUser, require_user   # noqa: E402
+
+main.prepare_schema()                       # lifespan is not run by a bare TestClient
+# The chart/kundli/vedic routes require sign-in; these cases are about input
+# validation, so stand in a verified caller rather than a real Firebase token.
+main.app.dependency_overrides[require_user] = lambda: AuthedUser(
+    uid="uid-test", email="t@example.com", email_verified=True, name="Test"
+)
 
 client = TestClient(main.app)               # no context-manager → startup/scheduler not fired
 _API = "/api/v1"

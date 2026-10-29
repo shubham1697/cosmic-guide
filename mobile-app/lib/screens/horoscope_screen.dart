@@ -436,6 +436,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
       children: [
         IconButton(
           icon: const Icon(Icons.chevron_left, color: AppColors.textSecondary),
+          tooltip: 'Previous day',
           onPressed: _goToPreviousDay,
         ),
         GestureDetector(
@@ -475,6 +476,7 @@ class _HoroscopeScreenState extends State<HoroscopeScreen>
                 ? AppColors.textMuted.withAlpha(77)
                 : AppColors.textSecondary,
           ),
+          tooltip: 'Next day',
           onPressed: isToday ? null : _goToNextDay,
         ),
       ],

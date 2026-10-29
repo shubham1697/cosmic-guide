@@ -92,20 +92,9 @@ class Compatibility(Base):
     challenges = Column(Text)
 
 
-class FortuneHistory(Base):
-    __tablename__ = "fortune_history"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)
-    zodiac_sign = Column(String(20))
-    topic = Column(String(50))
-    mood = Column(String(50))
-    fortune_text = Column(Text)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-
 class Story(Base):
     __tablename__ = "stories"
+    __table_args__ = (UniqueConstraint("title", "category", name="uq_story_title"),)
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(255), nullable=False)
@@ -127,26 +116,4 @@ class FortunePool(Base):
     zodiac_sign = Column(String(20), index=True)
     topic = Column(String(50), index=True)
     fortunes = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-
-class KundliReport(Base):
-    __tablename__ = "kundli_reports"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, index=True)
-    person1_name = Column(String(100))
-    person1_birth_date = Column(String(10))
-    person1_birth_time = Column(String(5))
-    person1_birth_place = Column(String(255))
-    person2_name = Column(String(100))
-    person2_birth_date = Column(String(10))
-    person2_birth_time = Column(String(5))
-    person2_birth_place = Column(String(255))
-    total_score = Column(Integer)
-    max_score = Column(Integer, default=36)
-    koota_scores = Column(JSON)
-    compatibility = Column(String(50))
-    analysis = Column(Text)
-    has_manglik_dosha = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

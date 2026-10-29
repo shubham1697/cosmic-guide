@@ -81,11 +81,13 @@ from shared.db_migrations import (  # noqa: E402
     ensure_compatibility_canonical,
     ensure_horoscope_lucky_number_string,
     ensure_cache_unique_indexes,
+    ensure_story_title_unique,
 )
 ensure_horoscope_system_column(engine, log)
 ensure_compatibility_canonical(engine, log)
 ensure_horoscope_lucky_number_string(engine, log)
 ensure_cache_unique_indexes(engine, log)
+ensure_story_title_unique(engine, log)
 
 
 # ── Ollama helpers ────────────────────────────────────────────────────────────

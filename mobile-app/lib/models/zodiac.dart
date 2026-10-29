@@ -60,6 +60,14 @@ class HoroscopeData {
   /// or challenge the day. Null for generic per-sign readings.
   final String? moodSummary;
 
+  /// Where the text came from: `chart`, `ai`, `cache` or `fallback`.
+  /// `fallback` is static filler served because the generator was unreachable,
+  /// and must be labelled as such rather than passed off as today's reading.
+  final String? source;
+
+  /// True when the text is canned filler rather than a reading for this date.
+  bool get isFallback => source == 'fallback';
+
   const HoroscopeData({
     required this.sign,
     required this.date,
@@ -74,6 +82,7 @@ class HoroscopeData {
     this.personalized = false,
     this.band,
     this.moodSummary,
+    this.source,
   });
 }
 

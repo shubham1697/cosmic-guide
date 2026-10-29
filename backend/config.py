@@ -1,5 +1,4 @@
 import os
-import secrets
 import sys
 from dotenv import load_dotenv
 
@@ -39,9 +38,6 @@ class Settings:
     API_PREFIX: str = "/api/v1"
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://cosmicguide:cosmicguide@localhost:5432/cosmicguide")
-    # No hard-coded fallback secret: fall back to a random per-process key when
-    # SECRET_KEY is unset (set it explicitly in production once auth ships).
-    SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
     # Shared secret for the operator-only /admin/* and notification broadcast
     # routes. Unset (the default) keeps them disabled rather than open, since
     # they spend LLM budget and can push to every registered device.
@@ -58,7 +54,9 @@ class Settings:
     #   iphone → force iPhone-hosted LLM
     AI_PROVIDER: str = _llm.ai_provider
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
+    # Publish /docs, /redoc and /openapi.json. Off by default: the schema maps
+    # every route (including /admin/*) for any anonymous caller.
+    ENABLE_DOCS: bool = os.getenv("ENABLE_DOCS", "false").lower() == "true"
 
     # Comma-separated origins, e.g. "https://cosmicguide.app,https://admin.…".
     # Default "*" suits the mobile client (browsers are not the audience);
@@ -86,8 +84,10 @@ class Settings:
     FCM_CREDENTIALS_PATH: str = os.getenv("FCM_CREDENTIALS_PATH", "")
     # Hour of day (0-23, server/container timezone) to send the daily reminder.
     DAILY_REMINDER_HOUR: int = int(os.getenv("DAILY_REMINDER_HOUR", "8"))
-    # Master switch for the in-process scheduler (turn off in tests/multi-worker).
-    ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "true").lower() == "true"
+    # Master switch for the in-process scheduler. OFF by default: the app ships
+    # on-device reminders at the user's chosen local time, so a server-side push
+    # on container time would be a second, badly-timed notification.
+    ENABLE_SCHEDULER: bool = os.getenv("ENABLE_SCHEDULER", "false").lower() == "true"
 
     # Logging — set LOG_LEVEL env var on Render to control verbosity
     # Levels: DEBUG | INFO | WARNING | ERROR  (default: INFO)

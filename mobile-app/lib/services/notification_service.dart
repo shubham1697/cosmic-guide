@@ -10,9 +10,13 @@ import 'local_notification_service.dart';
 ///
 /// Delivery is on-device via [LocalNotificationService], so the reminder works
 /// without any server or Firebase credentials and fires in the user's own
-/// timezone. Backend FCM registration is still attempted best-effort so a
-/// future server-side campaign can reach opted-in devices; those steps degrade
-/// gracefully and never block the local reminder.
+/// timezone.
+///
+/// The device is still registered with the backend best-effort so a future
+/// server-side campaign can reach opted-in devices, but it is always registered
+/// with `dailyHoroscopeEnabled: false`: the server job runs on *container* time
+/// (08:00 UTC), so letting it also send the daily reminder means two
+/// notifications, one of them in the middle of the night for half the world.
 class NotificationService {
   static const _enabledKey = 'notifications_enabled';
   static const _tokenKey = 'fcm_token';
@@ -91,9 +95,8 @@ class NotificationService {
   /// Turn the daily reminder on or off.
   ///
   /// On enable, requests notification permission and schedules the on-device
-  /// reminder; returns false only when the OS denied permission. Backend FCM
-  /// registration is attempted best-effort (for future server campaigns) and
-  /// does not affect the result.
+  /// reminder; returns false only when the OS denied permission. This never
+  /// touches the server's reminder flag — see the class doc.
   static Future<bool> setEnabled({
     required bool enabled,
     String? zodiacSign,
@@ -112,57 +115,11 @@ class NotificationService {
         minute: prefs.getInt(_minuteKey) ?? defaultMinute,
         zodiacSign: zodiacSign ?? prefs.getString('userSign'),
       );
-      unawaited(
-        _syncFcm(
-          enabled: true,
-          zodiacSign: zodiacSign,
-          tradition: tradition,
-          birthDate: birthDate,
-          birthTime: birthTime,
-          birthPlace: birthPlace,
-        ),
-      );
       return granted;
     }
 
     await LocalNotificationService.cancelDaily();
-    unawaited(_syncFcm(enabled: false));
     return true;
-  }
-
-  /// Best-effort backend registration so a future server-side push can reach
-  /// this device. Never throws; failures are logged and ignored.
-  static Future<void> _syncFcm({
-    required bool enabled,
-    String? zodiacSign,
-    String? tradition,
-    String? birthDate,
-    String? birthTime,
-    String? birthPlace,
-  }) async {
-    try {
-      final token = await _obtainFcmToken();
-      if (token == null) return;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_tokenKey, token);
-      if (enabled) {
-        await _registerCurrent(
-          token,
-          zodiacSign: zodiacSign,
-          tradition: tradition,
-          birthDate: birthDate,
-          birthTime: birthTime,
-          birthPlace: birthPlace,
-        );
-      } else {
-        await ApiService.updateNotificationPreferences(
-          token: token,
-          dailyHoroscopeEnabled: false,
-        );
-      }
-    } catch (e) {
-      debugPrint('FCM sync skipped: $e');
-    }
   }
 
   /// Re-register the current device with the latest profile data. Call after
@@ -217,7 +174,8 @@ class NotificationService {
       birthDate: birthDate ?? prefs.getString('birthDate'),
       birthTime: birthTime ?? prefs.getString('birthTime'),
       birthPlace: birthPlace ?? prefs.getString('birthPlace'),
-      dailyHoroscopeEnabled: true,
+      // Always false: this device schedules its own reminder locally.
+      dailyHoroscopeEnabled: false,
     );
   }
 

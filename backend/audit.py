@@ -16,7 +16,8 @@ single user request across every network hop it caused.
 
 Records are written to ``logs/audit.log`` (rotated) and echoed to stdout so
 they also appear in ``docker logs``.  Only metadata is recorded — request and
-response bodies are never logged, and sensitive headers are redacted.
+response bodies are never logged, and sensitive headers and personal query
+parameters are redacted.
 """
 
 import json
@@ -31,6 +32,8 @@ from typing import Optional
 # ── correlation id shared across inbound + outbound events ────────────────────
 _request_id_ctx: ContextVar[Optional[str]] = ContextVar("audit_request_id", default=None)
 
+_REDACTED = "***REDACTED***"
+
 # Headers that must never be written to the audit trail.
 _SENSITIVE_HEADERS = {
     "authorization",
@@ -40,6 +43,19 @@ _SENSITIVE_HEADERS = {
     "x-api-key",
     "api-key",
     "x-gemini-api-key",
+}
+
+# Query parameters carrying personal data. Exact birth date + time + place is a
+# precise identity datum, so it must never reach a log file or a log shipper.
+_SENSITIVE_QUERY_PARAMS = {
+    "birthdate",
+    "birthtime",
+    "birthplace",
+    "birth_date",
+    "birth_time",
+    "birth_place",
+    "email",
+    "token",
 }
 
 _AUDIT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
@@ -104,8 +120,25 @@ def redact_headers(headers: dict) -> dict:
     """Return a copy of ``headers`` with sensitive values masked."""
     redacted = {}
     for key, value in headers.items():
-        redacted[key] = "***REDACTED***" if key.lower() in _SENSITIVE_HEADERS else value
+        redacted[key] = _REDACTED if key.lower() in _SENSITIVE_HEADERS else value
     return redacted
+
+
+def redact_query(query: str) -> str:
+    """Return ``query`` with the values of personal-data parameters masked.
+
+    Idempotent, so it is safe to apply more than once along a logging path.
+    """
+    if not query:
+        return query
+    parts = []
+    for pair in query.split("&"):
+        name, sep, _value = pair.partition("=")
+        if sep and name.lower() in _SENSITIVE_QUERY_PARAMS:
+            parts.append(f"{name}={_REDACTED}")
+        else:
+            parts.append(pair)
+    return "&".join(parts)
 
 
 def _emit(record: dict) -> None:
@@ -138,7 +171,9 @@ def audit_inbound(
             "client_ip": client_ip,
             "method": method,
             "path": path,
-            "query": query,
+            # Redacted here as well as at the call site so no future caller can
+            # leak PII by passing the raw query string.
+            "query": redact_query(query),
             "user_agent": user_agent,
             "status": status_code,
             "duration_ms": round(duration_ms, 1),

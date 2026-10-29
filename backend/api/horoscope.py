@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from db.database import get_db
 from schemas import DATE_PATTERN, TIME_PATTERN, HoroscopeResponse, ForecastResponse
+from security import AuthedUser, optional_user, require_user
 from services.horoscope_service import get_horoscope, get_periodic_horoscope, get_forecast
 from services.zodiac_service import ZODIAC_SIGNS
 from logger import get_logger
@@ -32,15 +33,25 @@ def today_horoscope(
         default=None, alias="birthPlace", max_length=200,
         description="City/place name for the personalized reading.",
     ),
+    caller: AuthedUser | None = Depends(optional_user),
     db: Session = Depends(get_db),
 ):
     logger.info("→ GET /horoscope/today | sign=%s | system=%s | personal=%s", zodiac_sign, system, bool(birth_date))
-    
+
     if zodiac_sign not in ZODIAC_SIGNS:
         logger.warning("← GET /horoscope/today | status=400 | invalid sign")
         raise HTTPException(
             status_code=400,
             detail=f"Invalid zodiac sign. Must be one of: {', '.join(ZODIAC_SIGNS)}",
+        )
+    # The generic per-sign reading is shared and cheap; the personalised one
+    # geocodes, casts a chart and can spend an LLM call per unique birth triple,
+    # so it is only available to a signed-in caller.
+    if birth_date and caller is None:
+        logger.warning("← GET /horoscope/today | status=401 | personalized reading needs sign-in")
+        raise HTTPException(
+            status_code=401,
+            detail="Sign in to get a reading personalized to your birth chart.",
         )
     result = get_horoscope(
         zodiac_sign, system=system, db=db,
@@ -53,7 +64,7 @@ def today_horoscope(
     return result
 
 
-@router.get("/forecast", response_model=ForecastResponse)
+@router.get("/forecast", response_model=ForecastResponse, dependencies=[Depends(require_user)])
 def horoscope_forecast(
     birth_date: str = Query(
         ..., alias="birthDate", pattern=DATE_PATTERN,

@@ -36,6 +36,7 @@ class StoryDetailScreen extends StatelessWidget {
           elevation: 0,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios, color: AppColors.accent),
+            tooltip: 'Back',
             onPressed: () => Navigator.pop(context),
           ),
         ),

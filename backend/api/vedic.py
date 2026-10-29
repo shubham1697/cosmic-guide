@@ -1,11 +1,14 @@
 from datetime import date
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from schemas import DATE_PATTERN, TIME_PATTERN, VedicHomeSummaryResponse
+from security import require_user
 from services.vedic_service import get_vedic_home_summary
 
-router = APIRouter(prefix="/vedic", tags=["Vedic"])
+# Sign-in required: the summary geocodes, casts a full sidereal chart and takes
+# the caller's birth details, so it must not be callable anonymously.
+router = APIRouter(prefix="/vedic", tags=["Vedic"], dependencies=[Depends(require_user)])
 
 
 def _validate_date(value: str | None, field: str) -> None:

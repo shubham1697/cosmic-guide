@@ -78,6 +78,33 @@ jobs:
         working-directory: mobile-app
         run: flutter analyze
 
+      - name: Run tests
+        working-directory: mobile-app
+        run: flutter test
+
       - name: Check formatting
         working-directory: mobile-app
         run: dart format --output=none --set-exit-if-changed lib
+
+  release-config:
+    name: Release config guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Both of these are silent fallbacks at build time: a release build with
+      # neither set compiles and installs happily, then fails every request and
+      # is rejected by Play. Catch them here instead of in store reviews.
+      - name: Release build must not use the placeholder API host
+        working-directory: mobile-app
+        run: |
+          if grep -q "api.cosmicguide.app" lib/services/api_service.dart; then
+            echo "::warning file=mobile-app/lib/services/api_service.dart::_fallbackProdBaseUrl is still the placeholder host. Release builds MUST pass --dart-define=API_BASE_URL=https://<real-host>/api/v1."
+          fi
+
+      - name: Release build must not be debug-signed
+        working-directory: mobile-app
+        run: |
+          if [ ! -f android/key.properties ]; then
+            echo "::warning file=mobile-app/android/app/build.gradle.kts::android/key.properties is absent, so a release build now fails rather than silently using debug keys. Create the upload keystore before publishing."
+          fi

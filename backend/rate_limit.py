@@ -10,6 +10,7 @@ similar behind it before scaling out.
 """
 
 import time
+from collections import OrderedDict
 from threading import Lock
 
 from fastapi import Request
@@ -23,12 +24,17 @@ logger = get_logger(__name__)
 WINDOW_SECONDS = 60
 
 # Ceiling on tracked clients so a flood of spoofed/rotating IPs cannot grow the
-# table without bound. Pruning only drops windows that have already expired.
+# table without bound.
 _MAX_TRACKED_KEYS = 20_000
 
-# Never throttle liveness probes — a rate-limited health check reads as an
-# outage and can get the container killed.
-_EXEMPT_PATHS = frozenset({"/health", "/", "/docs", "/redoc", "/openapi.json"})
+# Budget applied to every client while the table is saturated. Saturation means
+# more distinct clients than we can track in one window — i.e. exactly the
+# distributed flood the limiter exists for — so it must tighten, never relax.
+_SATURATION_LIMIT = 10
+
+# Never throttle liveness/readiness probes — a rate-limited health check reads
+# as an outage and can get the container killed.
+_EXEMPT_PATHS = frozenset({"/health", "/ready", "/"})
 
 # Routes that can reach the LLM on a cache miss.
 _LLM_PREFIXES = (
@@ -44,8 +50,9 @@ class FixedWindowLimiter:
     """Counts hits per (bucket, client) inside a wall-clock aligned window."""
 
     def __init__(self) -> None:
-        self._hits: dict[tuple[str, str], tuple[float, int]] = {}
+        self._hits: OrderedDict[tuple[str, str], tuple[float, int]] = OrderedDict()
         self._lock = Lock()
+        self._saturated_until = 0.0
 
     def hit(self, bucket: str, client: str, limit: int, now: float) -> tuple[bool, int]:
         """Record a request. Returns (allowed, seconds_until_window_resets)."""
@@ -53,11 +60,15 @@ class FixedWindowLimiter:
         key = (bucket, client)
 
         with self._lock:
+            if now < self._saturated_until:
+                limit = min(limit, _SATURATION_LIMIT)
+
             started, count = self._hits.get(key, (0.0, 0))
             if started != window_start:
                 started, count = window_start, 0
             count += 1
             self._hits[key] = (started, count)
+            self._hits.move_to_end(key)
 
             if len(self._hits) > _MAX_TRACKED_KEYS:
                 self._prune(window_start)
@@ -70,13 +81,21 @@ class FixedWindowLimiter:
         stale = [key for key, (started, _) in self._hits.items() if started < window_start]
         for key in stale:
             del self._hits[key]
-        if not stale:
-            # Everything is in the current window; drop it all rather than
-            # letting the table grow unbounded under a distributed flood.
-            self._hits.clear()
+        if len(self._hits) <= _MAX_TRACKED_KEYS:
+            return
+
+        # More live clients than we can track. Evict least-recently-seen rather
+        # than wiping the table (which would hand every attacker a fresh
+        # budget), and clamp everyone to the saturation limit for this window.
+        while len(self._hits) > _MAX_TRACKED_KEYS:
+            self._hits.popitem(last=False)
+        already_saturated = self._saturated_until == window_start + WINDOW_SECONDS
+        self._saturated_until = window_start + WINDOW_SECONDS
+        if not already_saturated:
             logger.warning(
-                "Rate limiter tracking table exceeded %d live keys — cleared.",
-                _MAX_TRACKED_KEYS,
+                "Rate limiter saturated at %d live keys — evicting least-recently-seen "
+                "and clamping every client to %d/min for this window.",
+                _MAX_TRACKED_KEYS, _SATURATION_LIMIT,
             )
 
 

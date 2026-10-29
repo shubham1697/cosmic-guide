@@ -733,24 +733,41 @@ class _ChartScreenState extends State<ChartScreen>
 
   Widget _buildChartWheel(List<PlanetPosition> planets) {
     return Center(
-      child: SizedBox(
-        width: 300,
-        height: 300,
-        child: AnimatedBuilder(
-          animation: _chartDraw,
-          builder: (_, __) => CustomPaint(
-            painter: _ChartPainter(
-              sunSign: widget.userSign,
-              animValue: _chartDraw.value,
-              highlightedPlanetIndex: _highlightedPlanet,
-              planets: planets,
-              ascendantLongitude: _birthChart?.ascendantLongitude,
-              midheavenLongitude: _birthChart?.midheavenLongitude,
+      child: Semantics(
+        label: _describeWheel(planets),
+        readOnly: true,
+        child: SizedBox(
+          width: 300,
+          height: 300,
+          child: AnimatedBuilder(
+            animation: _chartDraw,
+            builder: (_, __) => CustomPaint(
+              painter: _ChartPainter(
+                sunSign: widget.userSign,
+                animValue: _chartDraw.value,
+                highlightedPlanetIndex: _highlightedPlanet,
+                planets: planets,
+                ascendantLongitude: _birthChart?.ascendantLongitude,
+                midheavenLongitude: _birthChart?.midheavenLongitude,
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// The wheel is pure CustomPaint, so without this a screen reader announces
+  /// nothing for the chart itself. The placement list below it carries detail;
+  /// this is the one-line summary.
+  String _describeWheel(List<PlanetPosition> planets) {
+    if (planets.isEmpty) return 'Birth chart wheel';
+    final placements = planets
+        .take(5)
+        .map((p) => '${p.name} in ${p.sign}')
+        .join(', ');
+    return 'Birth chart wheel. $placements. '
+        'Swipe on for all ${planets.length} placements.';
   }
 
   Widget _buildPlanetPlacements(List<PlanetPosition> planets) {

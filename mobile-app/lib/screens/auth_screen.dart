@@ -186,6 +186,7 @@ class _AuthScreenState extends State<AuthScreen> {
                           color: AppColors.textMuted,
                           size: 20,
                         ),
+                        tooltip: _obscure ? 'Show password' : 'Hide password',
                         onPressed: () => setState(() => _obscure = !_obscure),
                       ),
                     ),
